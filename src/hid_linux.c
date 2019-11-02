@@ -9,8 +9,9 @@
 #include <sys/ioctl.h>
 #include <linux/hidraw.h>
 
+#include <dirent.h>
 #include <fcntl.h>
-#include <libudev.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -147,23 +148,20 @@ is_fido(const char *path)
 }
 
 static int
-parse_uevent(struct udev_device *dev, int16_t *vendor_id, int16_t *product_id)
+parse_uevent(const char *path, int16_t *vendor_id, int16_t *product_id)
 {
-	const char		*uevent;
-	char			*cp;
-	char			*p;
-	char			*s;
+	FILE			*fp;
+	char			*p = NULL;
+	size_t			 n = 0;
 	int			 ok = -1;
 	short unsigned int	 x;
 	short unsigned int	 y;
 
-	if ((uevent = udev_device_get_sysattr_value(dev, "uevent")) == NULL)
+	fp = fopen(path, "r");
+	if (!fp)
 		return (-1);
 
-	if ((s = cp = strdup(uevent)) == NULL)
-		return (-1);
-
-	for ((p = strsep(&cp, "\n")); p && *p != '\0'; (p = strsep(&cp, "\n"))) {
+	while (getline(&p, &n, fp) >= 0) {
 		if (strncmp(p, "HID_ID=", 7) == 0) {
 			if (sscanf(p + 7, "%*x:%hx:%hx", &x, &y) == 2) {
 				*vendor_id = (int16_t)x;
@@ -174,50 +172,34 @@ parse_uevent(struct udev_device *dev, int16_t *vendor_id, int16_t *product_id)
 		}
 	}
 
-	free(s);
-
+	free(p);
+	fclose(fp);
 	return (ok);
 }
 
 static int
-copy_info(fido_dev_info_t *di, struct udev *udev,
-    struct udev_list_entry *udev_entry)
+copy_info(fido_dev_info_t *di, const char *name)
 {
-	const char		*name;
-	const char		*path;
-	const char		*manufacturer;
-	const char		*product;
-	struct udev_device	*dev = NULL;
-	struct udev_device	*hid_parent;
-	struct udev_device	*usb_parent;
-	int			 ok = -1;
+	char path[PATH_MAX];
+	int r, ok = -1;
 
 	memset(di, 0, sizeof(*di));
 
-	if ((name = udev_list_entry_get_name(udev_entry)) == NULL ||
-	    (dev = udev_device_new_from_syspath(udev, name)) == NULL ||
-	    (path = udev_device_get_devnode(dev)) == NULL ||
-	    is_fido(path) == 0)
+	r = snprintf(path, sizeof(path), "/dev/%s", name);
+	if (r < 0 || (size_t)r >= sizeof(path))
 		goto fail;
-
-	if ((hid_parent = udev_device_get_parent_with_subsystem_devtype(dev,
-	    "hid", NULL)) == NULL)
+	if (is_fido(path) == 0)
 		goto fail;
-
-	if ((usb_parent = udev_device_get_parent_with_subsystem_devtype(dev,
-	    "usb", "usb_device")) == NULL)
-		goto fail;
-
-	if (parse_uevent(hid_parent, &di->vendor_id, &di->product_id) < 0 ||
-	    (manufacturer = udev_device_get_sysattr_value(usb_parent,
-	    "manufacturer")) == NULL ||
-	    (product = udev_device_get_sysattr_value(usb_parent,
-	    "product")) == NULL)
-		goto fail;
-
 	di->path = strdup(path);
-	di->manufacturer = strdup(manufacturer);
-	di->product = strdup(product);
+
+	r = snprintf(path, sizeof(path), "/sys/class/hidraw/%s/device/uevent", name);
+	if (r < 0 || (size_t)r >= sizeof(path))
+		goto fail;
+	if (parse_uevent(path, &di->vendor_id, &di->product_id) < 0)
+		goto fail;
+
+	di->manufacturer = strdup("unknown");
+	di->product = strdup("unknown");
 
 	if (di->path == NULL ||
 	    di->manufacturer == NULL ||
@@ -226,9 +208,6 @@ copy_info(fido_dev_info_t *di, struct udev *udev,
 
 	ok = 0;
 fail:
-	if (dev != NULL)
-		udev_device_unref(dev);
-
 	if (ok < 0) {
 		free(di->path);
 		free(di->manufacturer);
@@ -239,14 +218,17 @@ fail:
 	return (ok);
 }
 
+static int
+filter_hidraw(const struct dirent *d)
+{
+	return strncmp(d->d_name, "hidraw", 6) == 0;
+}
+
 int
 fido_hid_manifest(fido_dev_info_t *devlist, size_t ilen, size_t *olen)
 {
-	struct udev		*udev = NULL;
-	struct udev_enumerate	*udev_enum = NULL;
-	struct udev_list_entry	*udev_list;
-	struct udev_list_entry	*udev_entry;
-	int			 r = FIDO_ERR_INTERNAL;
+	struct dirent **entries;
+	int i, n, r = FIDO_ERR_INTERNAL;
 
 	*olen = 0;
 
@@ -256,17 +238,11 @@ fido_hid_manifest(fido_dev_info_t *devlist, size_t ilen, size_t *olen)
 	if (devlist == NULL)
 		return (FIDO_ERR_INVALID_ARGUMENT);
 
-	if ((udev = udev_new()) == NULL ||
-	    (udev_enum = udev_enumerate_new(udev)) == NULL)
+	n = scandir("/sys/class/hidraw", &entries, filter_hidraw, alphasort);
+	if (n == -1)
 		goto fail;
-
-	if (udev_enumerate_add_match_subsystem(udev_enum, "hidraw") < 0 ||
-	    udev_enumerate_scan_devices(udev_enum) < 0 ||
-	    (udev_list = udev_enumerate_get_list_entry(udev_enum)) == NULL)
-		goto fail;
-
-	udev_list_entry_foreach(udev_entry, udev_list) {
-		if (copy_info(&devlist[*olen], udev, udev_entry) == 0) {
+	for (i = 0; i < n; ++i) {
+		if (copy_info(&devlist[*olen], entries[i]->d_name) == 0) {
 			devlist[*olen].io = (fido_dev_io_t) {
 				fido_hid_open,
 				fido_hid_close,
@@ -276,15 +252,14 @@ fido_hid_manifest(fido_dev_info_t *devlist, size_t ilen, size_t *olen)
 			if (++(*olen) == ilen)
 				break;
 		}
+		free(entries[i]);
 	}
+	for (; i < n; ++i)
+		free(entries[i]);
+	free(entries);
 
 	r = FIDO_OK;
 fail:
-	if (udev_enum != NULL)
-		udev_enumerate_unref(udev_enum);
-	if (udev != NULL)
-		udev_unref(udev);
-
 	return (r);
 }
 

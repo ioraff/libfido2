@@ -91,8 +91,6 @@ else()
 	endif()
 
 	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-		pkg_search_module(UDEV libudev REQUIRED)
-		set(UDEV_NAME "udev")
 		# Define be32toh().
 		add_definitions(-D_GNU_SOURCE)
 	elseif(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")

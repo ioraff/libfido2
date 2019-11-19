@@ -4,10 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <openssl/ec.h>
-#include <openssl/evp.h>
-#include <openssl/sha.h>
-#include <openssl/x509.h>
+#include <bearssl.h>
 
 #include <string.h>
 #include "fido.h"
@@ -193,18 +190,17 @@ check_extensions(int authdata_ext, int ext)
 int
 fido_check_rp_id(const char *id, const unsigned char *obtained_hash)
 {
-	unsigned char expected_hash[SHA256_DIGEST_LENGTH];
+	br_sha256_context	ctx;
+	unsigned char		expected_hash[br_sha256_SIZE];
 
 	explicit_bzero(expected_hash, sizeof(expected_hash));
 
-	if (SHA256((const unsigned char *)id, strlen(id),
-	    expected_hash) != expected_hash) {
-		fido_log_debug("%s: sha256", __func__);
-		return (-1);
-	}
+	br_sha256_init(&ctx);
+	br_sha256_update(&ctx, id, strlen(id));
+	br_sha256_out(&ctx, expected_hash);
 
 	return (timingsafe_bcmp(expected_hash, obtained_hash,
-	    SHA256_DIGEST_LENGTH));
+	    br_sha256_SIZE));
 }
 
 static int
@@ -215,7 +211,7 @@ get_signed_hash_packed(fido_blob_t *dgst, const fido_blob_t *clientdata,
 	unsigned char		*authdata_ptr = NULL;
 	size_t			 authdata_len;
 	struct cbor_load_result	 cbor;
-	SHA256_CTX		 ctx;
+	br_sha256_context	 ctx;
 	int			 ok = -1;
 
 	if ((item = cbor_load(authdata_cbor->ptr, authdata_cbor->len,
@@ -233,13 +229,14 @@ get_signed_hash_packed(fido_blob_t *dgst, const fido_blob_t *clientdata,
 	authdata_ptr = cbor_bytestring_handle(item);
 	authdata_len = cbor_bytestring_length(item);
 
-	if (dgst->len != SHA256_DIGEST_LENGTH || SHA256_Init(&ctx) == 0 ||
-	    SHA256_Update(&ctx, authdata_ptr, authdata_len) == 0 ||
-	    SHA256_Update(&ctx, clientdata->ptr, clientdata->len) == 0 ||
-	    SHA256_Final(dgst->ptr, &ctx) == 0) {
+	if (dgst->len != br_sha256_SIZE) {
 		fido_log_debug("%s: sha256", __func__);
 		goto fail;
 	}
+	br_sha256_init(&ctx);
+	br_sha256_update(&ctx, authdata_ptr, authdata_len);
+	br_sha256_update(&ctx, clientdata->ptr, clientdata->len);
+	br_sha256_out(&ctx, dgst->ptr);
 
 	ok = 0;
 fail:
@@ -256,20 +253,22 @@ get_signed_hash_u2f(fido_blob_t *dgst, const unsigned char *rp_id,
 {
 	const uint8_t		zero = 0;
 	const uint8_t		four = 4; /* uncompressed point */
-	SHA256_CTX		ctx;
+	br_sha256_context	ctx;
 
-	if (dgst->len != SHA256_DIGEST_LENGTH || SHA256_Init(&ctx) == 0 ||
-	    SHA256_Update(&ctx, &zero, sizeof(zero)) == 0 ||
-	    SHA256_Update(&ctx, rp_id, rp_id_len) == 0 ||
-	    SHA256_Update(&ctx, clientdata->ptr, clientdata->len) == 0 ||
-	    SHA256_Update(&ctx, id->ptr, id->len) == 0 ||
-	    SHA256_Update(&ctx, &four, sizeof(four)) == 0 ||
-	    SHA256_Update(&ctx, pk->x, sizeof(pk->x)) == 0 ||
-	    SHA256_Update(&ctx, pk->y, sizeof(pk->y)) == 0 ||
-	    SHA256_Final(dgst->ptr, &ctx) == 0) {
+	if (dgst->len != br_sha256_SIZE) {
 		fido_log_debug("%s: sha256", __func__);
 		return (-1);
 	}
+
+	br_sha256_init(&ctx);
+	br_sha256_update(&ctx, &zero, sizeof(zero));
+	br_sha256_update(&ctx, rp_id, rp_id_len);
+	br_sha256_update(&ctx, clientdata->ptr, clientdata->len);
+	br_sha256_update(&ctx, id->ptr, id->len);
+	br_sha256_update(&ctx, &four, sizeof(four));
+	br_sha256_update(&ctx, pk->x, sizeof(pk->x));
+	br_sha256_update(&ctx, pk->y, sizeof(pk->y));
+	br_sha256_out(&ctx, dgst->ptr);
 
 	return (0);
 }
@@ -278,42 +277,29 @@ static int
 verify_sig(const fido_blob_t *dgst, const fido_blob_t *x5c,
     const fido_blob_t *sig)
 {
-	BIO		*rawcert = NULL;
-	X509		*cert = NULL;
-	EVP_PKEY	*pkey = NULL;
-	EC_KEY		*ec;
-	int		 ok = -1;
-
-	/* openssl needs ints */
-	if (dgst->len > INT_MAX || x5c->len > INT_MAX || sig->len > INT_MAX) {
-		fido_log_debug("%s: dgst->len=%zu, x5c->len=%zu, sig->len=%zu",
-		    __func__, dgst->len, x5c->len, sig->len);
-		return (-1);
-	}
+	br_x509_decoder_context	 ctx;
+	br_x509_pkey		*pkey;
+	int			 ok = -1;
 
 	/* fetch key from x509 */
-	if ((rawcert = BIO_new_mem_buf(x5c->ptr, (int)x5c->len)) == NULL ||
-	    (cert = d2i_X509_bio(rawcert, NULL)) == NULL ||
-	    (pkey = X509_get_pubkey(cert)) == NULL ||
-	    (ec = EVP_PKEY_get0_EC_KEY(pkey)) == NULL) {
+	br_x509_decoder_init(&ctx, NULL, NULL);
+	br_x509_decoder_push(&ctx, x5c->ptr, x5c->len);
+	if (br_x509_decoder_last_error(&ctx) != 0 ||
+	    (pkey = br_x509_decoder_get_pkey(&ctx)) == NULL ||
+	    pkey->key_type != BR_KEYTYPE_EC) {
 		fido_log_debug("%s: x509 key", __func__);
 		goto fail;
 	}
 
-	if (ECDSA_verify(0, dgst->ptr, (int)dgst->len, sig->ptr,
-	    (int)sig->len, ec) != 1) {
-		fido_log_debug("%s: ECDSA_verify", __func__);
+	if (br_ecdsa_vrfy_asn1_get_default()(br_ec_get_default(), dgst->ptr,
+	    dgst->len, &pkey->key.ec, sig->ptr, sig->len) == 0) {
+		fido_log_debug("%s: ECDSA verify", __func__);
 		goto fail;
 	}
 
 	ok = 0;
 fail:
-	if (rawcert != NULL)
-		BIO_free(rawcert);
-	if (cert != NULL)
-		X509_free(cert);
-	if (pkey != NULL)
-		EVP_PKEY_free(pkey);
+	explicit_bzero(&ctx, sizeof(ctx));
 
 	return (ok);
 }
@@ -321,7 +307,7 @@ fail:
 int
 fido_cred_verify(const fido_cred_t *cred)
 {
-	unsigned char	buf[SHA256_DIGEST_LENGTH];
+	unsigned char	buf[br_sha256_SIZE];
 	fido_blob_t	dgst;
 	int		r;
 
@@ -395,7 +381,7 @@ out:
 int
 fido_cred_verify_self(const fido_cred_t *cred)
 {
-	unsigned char	buf[SHA256_DIGEST_LENGTH];
+	unsigned char	buf[br_sha256_SIZE];
 	fido_blob_t	dgst;
 	int		ok = -1;
 	int		r;

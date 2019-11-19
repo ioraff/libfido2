@@ -4,10 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <openssl/ec.h>
-#include <openssl/ecdsa.h>
-#include <openssl/evp.h>
-#include <openssl/sha.h>
+#include <bearssl.h>
 
 #include <string.h>
 #include "fido.h"
@@ -371,7 +368,7 @@ get_signed_hash(int cose_alg, fido_blob_t *dgst, const fido_blob_t *clientdata,
 	unsigned char		*authdata_ptr = NULL;
 	size_t			 authdata_len;
 	struct cbor_load_result	 cbor;
-	SHA256_CTX		 ctx;
+	br_sha256_context	 ctx;
 	int			 ok = -1;
 
 	if ((item = cbor_load(authdata_cbor->ptr, authdata_cbor->len,
@@ -385,14 +382,15 @@ get_signed_hash(int cose_alg, fido_blob_t *dgst, const fido_blob_t *clientdata,
 	authdata_len = cbor_bytestring_length(item);
 
 	if (cose_alg != COSE_EDDSA) {
-		if (dgst->len < SHA256_DIGEST_LENGTH || SHA256_Init(&ctx) == 0 ||
-		    SHA256_Update(&ctx, authdata_ptr, authdata_len) == 0 ||
-		    SHA256_Update(&ctx, clientdata->ptr, clientdata->len) == 0 ||
-		    SHA256_Final(dgst->ptr, &ctx) == 0) {
+		if (dgst->len < br_sha256_SIZE) {
 			fido_log_debug("%s: sha256", __func__);
 			goto fail;
 		}
-		dgst->len = SHA256_DIGEST_LENGTH;
+		br_sha256_init(&ctx);
+		br_sha256_update(&ctx, authdata_ptr, authdata_len);
+		br_sha256_update(&ctx, clientdata->ptr, clientdata->len);
+		br_sha256_out(&ctx, dgst->ptr);
+		dgst->len = br_sha256_SIZE;
 	} else {
 		if (SIZE_MAX - authdata_len < clientdata->len ||
 		    dgst->len < authdata_len + clientdata->len) {
@@ -417,34 +415,25 @@ int
 fido_verify_sig_es256(const fido_blob_t *dgst, const es256_pk_t *pk,
     const fido_blob_t *sig)
 {
-	EVP_PKEY	*pkey = NULL;
-	EC_KEY		*ec = NULL;
-	int		 ok = -1;
+	unsigned char		 q[BR_EC_KBUF_PUB_MAX_SIZE];
+	br_ec_public_key	 pkey;
+	int			 ok = -1;
 
-	/* ECDSA_verify needs ints */
-	if (dgst->len > INT_MAX || sig->len > INT_MAX) {
-		fido_log_debug("%s: dgst->len=%zu, sig->len=%zu", __func__,
-		    dgst->len, sig->len);
-		return (-1);
-	}
+	/* BearSSL needs uncompressed format */
+	q[0] = 4;
+	memcpy(q + 1, pk->x, 32);
+	memcpy(q + 1 + 32, pk->y, 32);
+	pkey.q = q;
+	pkey.qlen = 1 + 32 + 32;
 
-	if ((pkey = es256_pk_to_EVP_PKEY(pk)) == NULL ||
-	    (ec = EVP_PKEY_get0_EC_KEY(pkey)) == NULL) {
-		fido_log_debug("%s: pk -> ec", __func__);
-		goto fail;
-	}
-
-	if (ECDSA_verify(0, dgst->ptr, (int)dgst->len, sig->ptr,
-	    (int)sig->len, ec) != 1) {
-		fido_log_debug("%s: ECDSA_verify", __func__);
+	if (br_ecdsa_vrfy_asn1_get_default()(br_ec_get_default(), dgst->ptr,
+	    dgst->len, &pkey, sig->ptr, sig->len) == 0) {
+		fido_log_debug("%s: ECDSA verify", __func__);
 		goto fail;
 	}
 
 	ok = 0;
 fail:
-	if (pkey != NULL)
-		EVP_PKEY_free(pkey);
-
 	return (ok);
 }
 
@@ -452,34 +441,37 @@ int
 fido_verify_sig_rs256(const fido_blob_t *dgst, const rs256_pk_t *pk,
     const fido_blob_t *sig)
 {
-	EVP_PKEY	*pkey = NULL;
-	RSA		*rsa = NULL;
-	int		 ok = -1;
+	br_rsa_public_key	pkey;
+	unsigned char		hash[br_sha256_SIZE];
+	int			ok = -1;
 
-	/* RSA_verify needs unsigned ints */
-	if (dgst->len > UINT_MAX || sig->len > UINT_MAX) {
-		fido_log_debug("%s: dgst->len=%zu, sig->len=%zu", __func__,
-		    dgst->len, sig->len);
+	/* RSA verify needs SHA256-sized hash */
+	if (dgst->len != br_sha256_SIZE) {
+		fido_log_debug("%s: dgst->len=%zu", __func__, dgst->len);
 		return (-1);
 	}
 
-	if ((pkey = rs256_pk_to_EVP_PKEY(pk)) == NULL ||
-	    (rsa = EVP_PKEY_get0_RSA(pkey)) == NULL) {
-		fido_log_debug("%s: pk -> ec", __func__);
-		goto fail;
-	}
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#endif
+	pkey.n = (unsigned char *)pk->n;
+	pkey.nlen = sizeof(pk->n);
+	pkey.e = (unsigned char *)pk->e;
+	pkey.elen = sizeof(pk->e);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
-	if (RSA_verify(NID_sha256, dgst->ptr, (unsigned int)dgst->len, sig->ptr,
-	    (unsigned int)sig->len, rsa) != 1) {
+	if (br_rsa_pkcs1_vrfy_get_default()(sig->ptr, sig->len,
+	    BR_HASH_OID_SHA256, dgst->len, &pkey, hash) != 1 ||
+	    memcmp(dgst->ptr, hash, sizeof(hash)) != 0) {
 		fido_log_debug("%s: RSA_verify", __func__);
 		goto fail;
 	}
 
 	ok = 0;
 fail:
-	if (pkey != NULL)
-		EVP_PKEY_free(pkey);
-
 	return (ok);
 }
 
@@ -487,47 +479,12 @@ int
 fido_verify_sig_eddsa(const fido_blob_t *dgst, const eddsa_pk_t *pk,
     const fido_blob_t *sig)
 {
-	EVP_PKEY	*pkey = NULL;
-	EVP_MD_CTX	*mdctx = NULL;
-	int		 ok = -1;
+	(void)dgst;
+	(void)pk;
+	(void)sig;
 
-	/* EVP_DigestVerify needs ints */
-	if (dgst->len > INT_MAX || sig->len > INT_MAX) {
-		fido_log_debug("%s: dgst->len=%zu, sig->len=%zu", __func__,
-		    dgst->len, sig->len);
-		return (-1);
-	}
-
-	if ((pkey = eddsa_pk_to_EVP_PKEY(pk)) == NULL) {
-		fido_log_debug("%s: pk -> pkey", __func__);
-		goto fail;
-	}
-
-	if ((mdctx = EVP_MD_CTX_new()) == NULL) {
-		fido_log_debug("%s: EVP_MD_CTX_new", __func__);
-		goto fail;
-	}
-
-	if (EVP_DigestVerifyInit(mdctx, NULL, NULL, NULL, pkey) != 1) {
-		fido_log_debug("%s: EVP_DigestVerifyInit", __func__);
-		goto fail;
-	}
-
-	if (EVP_DigestVerify(mdctx, sig->ptr, sig->len, dgst->ptr,
-	    dgst->len) != 1) {
-		fido_log_debug("%s: EVP_DigestVerify", __func__);
-		goto fail;
-	}
-
-	ok = 0;
-fail:
-	if (mdctx != NULL)
-		EVP_MD_CTX_free(mdctx);
-
-	if (pkey != NULL)
-		EVP_PKEY_free(pkey);
-
-	return (ok);
+	fido_log_debug("%s: EdDSA not implemented", __func__);
+	return (-1);
 }
 
 int

@@ -29,14 +29,14 @@ add_executable(fido2-cred
 	${COMPAT_SOURCES}
 )
 
-add_executable(fido2-assert
-	fido2-assert.c
-	assert_get.c
-	assert_verify.c
-	base64.c
-	util.c
-	${COMPAT_SOURCES}
-)
+#add_executable(fido2-assert
+#	fido2-assert.c
+#	assert_get.c
+#	assert_verify.c
+#	base64.c
+#	util.c
+#	${COMPAT_SOURCES}
+#)
 
 add_executable(fido2-token
 	fido2-token.c
@@ -50,8 +50,9 @@ add_executable(fido2-token
 )
 
 target_link_libraries(fido2-cred ${CRYPTO_LIBRARIES} fido2_shared)
-target_link_libraries(fido2-assert ${CRYPTO_LIBRARIES} fido2_shared)
+#target_link_libraries(fido2-assert ${CRYPTO_LIBRARIES} fido2_shared)
 target_link_libraries(fido2-token ${CRYPTO_LIBRARIES} fido2_shared)
 
-install(TARGETS fido2-cred fido2-assert fido2-token
+#install(TARGETS fido2-cred fido2-assert fido2-token
+install(TARGETS fido2-cred fido2-token
 	DESTINATION ${CMAKE_INSTALL_BINDIR})

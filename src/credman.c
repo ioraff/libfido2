@@ -4,7 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <openssl/sha.h>
+#include <bearssl.h>
 
 #include <string.h>
 
@@ -369,14 +369,14 @@ static int
 credman_get_rk_wait(fido_dev_t *dev, const char *rp_id, fido_credman_rk_t *rk,
     const char *pin, int ms)
 {
-	fido_blob_t	rp_dgst;
-	uint8_t		dgst[SHA256_DIGEST_LENGTH];
-	int		r;
+	fido_blob_t		rp_dgst;
+	br_sha256_context	ctx;
+	uint8_t			dgst[br_sha256_SIZE];
+	int			r;
 
-	if (SHA256((const unsigned char *)rp_id, strlen(rp_id), dgst) != dgst) {
-		fido_log_debug("%s: sha256", __func__);
-		return (FIDO_ERR_INTERNAL);
-	}
+	br_sha256_init(&ctx);
+	br_sha256_update(&ctx, rp_id, strlen(rp_id));
+	br_sha256_out(&ctx, dgst);
 
 	rp_dgst.ptr = dgst;
 	rp_dgst.len = sizeof(dgst);

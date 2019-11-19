@@ -4,9 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#include <openssl/sha.h>
+#include <bearssl.h>
 
 #include <string.h>
 #include "fido.h"
@@ -629,14 +627,16 @@ cbor_encode_assert_options(fido_opt_t up, fido_opt_t uv)
 cbor_item_t *
 cbor_encode_pin_auth(const fido_blob_t *hmac_key, const fido_blob_t *data)
 {
-	const EVP_MD	*md = NULL;
-	unsigned char	 dgst[SHA256_DIGEST_LENGTH];
-	unsigned int	 dgst_len;
+	br_hmac_context		ctx;
+	br_hmac_key_context	kc;
+	unsigned char	 	dgst[br_sha256_SIZE];
 
-	if ((md = EVP_sha256()) == NULL || HMAC(md, hmac_key->ptr,
-	    (int)hmac_key->len, data->ptr, (int)data->len, dgst,
-	    &dgst_len) == NULL || dgst_len != SHA256_DIGEST_LENGTH)
-		return (NULL);
+	br_hmac_key_init(&kc, &br_sha256_vtable, hmac_key->ptr, hmac_key->len);
+	br_hmac_init(&ctx, &kc, 0);
+	br_hmac_update(&ctx, data->ptr, data->len);
+	br_hmac_out(&ctx, dgst);
+	explicit_bzero(&kc, sizeof(kc));
+	explicit_bzero(&ctx, sizeof(ctx));
 
 	return (cbor_build_bytestring(dgst, 16));
 }
@@ -665,17 +665,16 @@ cbor_encode_pin_enc(const fido_blob_t *key, const fido_blob_t *pin)
 static int
 sha256(const unsigned char *data, size_t data_len, fido_blob_t *digest)
 {
-	if ((digest->ptr = calloc(1, SHA256_DIGEST_LENGTH)) == NULL)
+	br_sha256_context ctx;
+
+	if ((digest->ptr = calloc(1, br_sha256_SIZE)) == NULL)
 		return (-1);
 
-	digest->len = SHA256_DIGEST_LENGTH;
+	digest->len = br_sha256_SIZE;
 
-	if (SHA256(data, data_len, digest->ptr) != digest->ptr) {
-		free(digest->ptr);
-		digest->ptr = NULL;
-		digest->len = 0;
-		return (-1);
-	}
+	br_sha256_init(&ctx);
+	br_sha256_update(&ctx, data, data_len);
+	br_sha256_out(&ctx, digest->ptr);
 
 	return (0);
 }
@@ -684,15 +683,10 @@ cbor_item_t *
 cbor_encode_change_pin_auth(const fido_blob_t *key, const fido_blob_t *new_pin,
     const fido_blob_t *pin)
 {
-	unsigned char	 dgst[SHA256_DIGEST_LENGTH];
-	unsigned int	 dgst_len;
+	unsigned char	 dgst[br_sha256_SIZE];
 	cbor_item_t	*item = NULL;
-	const EVP_MD	*md = NULL;
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-	HMAC_CTX	 ctx;
-#else
-	HMAC_CTX	*ctx = NULL;
-#endif
+	br_hmac_context	 ctx;
+	br_hmac_key_context kc;
 	fido_blob_t	*npe = NULL; /* new pin, encrypted */
 	fido_blob_t	*ph = NULL;  /* pin hash */
 	fido_blob_t	*phe = NULL; /* pin hash, encrypted */
@@ -720,28 +714,13 @@ cbor_encode_change_pin_auth(const fido_blob_t *key, const fido_blob_t *new_pin,
 		goto fail;
 	}
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-	HMAC_CTX_init(&ctx);
-
-	if ((md = EVP_sha256()) == NULL ||
-	    HMAC_Init_ex(&ctx, key->ptr, (int)key->len, md, NULL) == 0 ||
-	    HMAC_Update(&ctx, npe->ptr, (int)npe->len) == 0 ||
-	    HMAC_Update(&ctx, phe->ptr, (int)phe->len) == 0 ||
-	    HMAC_Final(&ctx, dgst, &dgst_len) == 0 || dgst_len != 32) {
-		fido_log_debug("%s: HMAC", __func__);
-		goto fail;
-	}
-#else
-	if ((ctx = HMAC_CTX_new()) == NULL ||
-	    (md = EVP_sha256())  == NULL ||
-	    HMAC_Init_ex(ctx, key->ptr, (int)key->len, md, NULL) == 0 ||
-	    HMAC_Update(ctx, npe->ptr, (int)npe->len) == 0 ||
-	    HMAC_Update(ctx, phe->ptr, (int)phe->len) == 0 ||
-	    HMAC_Final(ctx, dgst, &dgst_len) == 0 || dgst_len != 32) {
-		fido_log_debug("%s: HMAC", __func__);
-		goto fail;
-	}
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+	br_hmac_key_init(&kc, &br_sha256_vtable, key->ptr, key->len);
+	br_hmac_init(&ctx, &kc, 0);
+	br_hmac_update(&ctx, npe->ptr, npe->len);
+	br_hmac_update(&ctx, phe->ptr, phe->len);
+	br_hmac_out(&ctx, dgst);
+	explicit_bzero(&kc, sizeof(kc));
+	explicit_bzero(&ctx, sizeof(ctx));
 
 	if ((item = cbor_build_bytestring(dgst, 16)) == NULL) {
 		fido_log_debug("%s: cbor_build_bytestring", __func__);
@@ -753,11 +732,6 @@ fail:
 	fido_blob_free(&npe);
 	fido_blob_free(&ph);
 	fido_blob_free(&phe);
-
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-	if (ctx != NULL)
-		HMAC_CTX_free(ctx);
-#endif
 
 	if (ok < 0) {
 		if (item != NULL) {
@@ -772,9 +746,9 @@ fail:
 cbor_item_t *
 cbor_encode_set_pin_auth(const fido_blob_t *key, const fido_blob_t *pin)
 {
-	const EVP_MD	*md = NULL;
-	unsigned char	 dgst[SHA256_DIGEST_LENGTH];
-	unsigned int	 dgst_len;
+	br_hmac_context	 ctx;
+	br_hmac_key_context kc;
+	unsigned char	 dgst[br_sha256_SIZE];
 	cbor_item_t	*item = NULL;
 	fido_blob_t	*pe = NULL;
 
@@ -786,12 +760,12 @@ cbor_encode_set_pin_auth(const fido_blob_t *key, const fido_blob_t *pin)
 		goto fail;
 	}
 
-	if ((md = EVP_sha256()) == NULL || key->len != 32 || HMAC(md, key->ptr,
-	    (int)key->len, pe->ptr, (int)pe->len, dgst, &dgst_len) == NULL ||
-	    dgst_len != SHA256_DIGEST_LENGTH) {
-		fido_log_debug("%s: HMAC", __func__);
-		goto fail;
-	}
+	br_hmac_key_init(&kc, &br_sha256_vtable, key->ptr, key->len);
+	br_hmac_init(&ctx, &kc, 0);
+	br_hmac_update(&ctx, pe->ptr, pe->len);
+	br_hmac_out(&ctx, dgst);
+	explicit_bzero(&kc, sizeof(kc));
+	explicit_bzero(&ctx, sizeof(ctx));
 
 	item = cbor_build_bytestring(dgst, 16);
 fail:

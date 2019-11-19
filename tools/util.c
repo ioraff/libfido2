@@ -7,10 +7,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include <openssl/ec.h>
-#include <openssl/evp.h>
-#include <openssl/pem.h>
-
 #include <fido.h>
 #include <fido/es256.h>
 #include <fido/rs256.h>
@@ -133,6 +129,7 @@ open_dev(const char *path)
 	return (dev);
 }
 
+#if 0
 EC_KEY *
 read_ec_pubkey(const char *path)
 {
@@ -334,6 +331,7 @@ fail:
 
 	return (ok);
 }
+#endif
 
 void
 print_cred(FILE *out_f, int type, const fido_cred_t *cred)
@@ -347,6 +345,7 @@ print_cred(FILE *out_f, int type, const fido_cred_t *cred)
 
 	fprintf(out_f, "%s\n", id);
 
+#if 0
 	if (type == COSE_ES256) {
 		write_ec_pubkey(out_f, fido_cred_pubkey_ptr(cred),
 		    fido_cred_pubkey_len(cred));
@@ -359,6 +358,7 @@ print_cred(FILE *out_f, int type, const fido_cred_t *cred)
 	} else {
 		errx(1, "print_cred: unknown type");
 	}
+#endif
 
 	free(id);
 }

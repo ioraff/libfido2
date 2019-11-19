@@ -7,8 +7,6 @@
 #ifndef _FIDO_ES256_H
 #define _FIDO_ES256_H
 
-#include <openssl/ec.h>
-
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -24,15 +22,12 @@ extern "C" {
 
 es256_pk_t *es256_pk_new(void);
 void es256_pk_free(es256_pk_t **);
-EVP_PKEY *es256_pk_to_EVP_PKEY(const es256_pk_t *);
 
-int es256_pk_from_EC_KEY(es256_pk_t *, const EC_KEY *);
 int es256_pk_from_ptr(es256_pk_t *, const void *, size_t);
 
 #ifdef _FIDO_INTERNAL
 es256_sk_t *es256_sk_new(void);
 void es256_sk_free(es256_sk_t **);
-EVP_PKEY *es256_sk_to_EVP_PKEY(const es256_sk_t *);
 
 int es256_derive_pk(const es256_sk_t *, es256_pk_t *);
 int es256_sk_create(es256_sk_t *);

@@ -4,9 +4,6 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <openssl/bio.h>
-#include <openssl/evp.h>
-
 #include <fido.h>
 #include <limits.h>
 #include <stdint.h>
@@ -18,87 +15,72 @@
 int
 base64_encode(const void *ptr, size_t len, char **out)
 {
-	BIO  *bio_b64 = NULL;
-	BIO  *bio_mem = NULL;
-	char *b64_ptr = NULL;
-	long  b64_len;
-	int   n;
-	int   ok = -1;
+	static const char b64[] =
+	    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	const unsigned char	*src = ptr;
+	char			*dst;
+	size_t			 i;
+	unsigned long		 x;
 
-	if (ptr == NULL || out == NULL || len > INT_MAX)
+	if (ptr == NULL || out == NULL ||
+	    (*out = dst = calloc(1, (len + 2) / 3 * 4 + 1)) == NULL)
 		return (-1);
 
-	*out = NULL;
+	for (i = 0; i < len; i += 3, dst += 4) {
+		x = src[i] << 16;
+		dst[3] = i + 2 >= len ? '=' : b64[(x |= src[i + 2]) & 0x3f];
+		dst[2] = i + 1 >= len ? '=' :
+		    b64[(x |= src[i + 1] << 8) >> 6 & 0x3f];
+		dst[1] = b64[x >> 12 & 0x3f];
+		dst[0] = b64[x >> 18];
+	}
+	*dst = '\0';
 
-	if ((bio_b64 = BIO_new(BIO_f_base64())) == NULL)
-		goto fail;
-	if ((bio_mem = BIO_new(BIO_s_mem())) == NULL)
-		goto fail;
-
-	BIO_set_flags(bio_b64, BIO_FLAGS_BASE64_NO_NL);
-	BIO_push(bio_b64, bio_mem);
-
-	n = BIO_write(bio_b64, ptr, (int)len);
-	if (n < 0 || (size_t)n != len)
-		goto fail;
-
-	if (BIO_flush(bio_b64) < 0)
-		goto fail;
-
-	b64_len = BIO_get_mem_data(bio_b64, &b64_ptr);
-	if (b64_len < 0 || (size_t)b64_len == SIZE_MAX || b64_ptr == NULL)
-		goto fail;
-	if ((*out = calloc(1, (size_t)b64_len + 1)) == NULL)
-		goto fail;
-
-	memcpy(*out, b64_ptr, (size_t)b64_len);
-	ok = 0;
-
-fail:
-	BIO_free(bio_b64);
-	BIO_free(bio_mem);
-
-	return (ok);
+	return (0);
 }
 
 int
-base64_decode(char *in, void **ptr, size_t *len)
+base64_decode(const char *src, void **ptr, size_t *len)
 {
-	BIO    *bio_mem = NULL;
-	BIO    *bio_b64 = NULL;
-	size_t  alloc_len;
-	int     n;
-	int     ok = -1;
+	static const char b64[] = {
+		['A'] =  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,
+		        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+		['a'] = 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+		        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+		['0'] = 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+		['+'] = 62,
+		['/'] = 63,
+	};
+	unsigned char	*dst;
+	size_t		 src_len, i;
+	unsigned long	 x;
+	int		 ok = -1, pad = 0, c;
 
-	if (in == NULL || ptr == NULL || len == NULL || strlen(in) > INT_MAX)
+	if (src == NULL || ptr == NULL || len == NULL ||
+	    (src_len = strlen(src)) % 4 != 0 ||
+	    (*ptr = dst = calloc(1, src_len / 4 * 3)) == NULL)
 		return (-1);
 
-	*ptr = NULL;
-	*len = 0;
+	for (i = 0, x = 0, len = 0; src[i]; ++i) {
+		c = (unsigned char)src[i];
+		if (c == '=' && (!src[i + 1] || (src[i + 1] == '=' &&
+		    !src[i + 2])))
+			++pad;
+		else if (c >= sizeof(b64) || (!b64[c] && c != 'A'))
+			goto fail;
+		x = x << 6 | b64[c];
+		if (i % 4 == 3) {
+			dst[2] = x & 0xff; x >>= 8;
+			dst[1] = x & 0xff; x >>= 8;
+			dst[0] = x & 0xff;
+			dst += 3;
+		}
+	}
 
-	if ((bio_b64 = BIO_new(BIO_f_base64())) == NULL)
-		goto fail;
-	if ((bio_mem = BIO_new_mem_buf((void *)in, -1)) == NULL)
-		goto fail;
-
-	BIO_set_flags(bio_b64, BIO_FLAGS_BASE64_NO_NL);
-	BIO_push(bio_b64, bio_mem);
-
-	alloc_len = strlen(in);
-	if ((*ptr = calloc(1, alloc_len)) == NULL)
-		goto fail;
-
-	n = BIO_read(bio_b64, *ptr, (int)alloc_len);
-	if (n <= 0 || BIO_eof(bio_b64) == 0)
-		goto fail;
-
-	*len = (size_t)n;
+	*len = src_len / 4 * 3 - pad;
 	ok = 0;
 
 fail:
-	BIO_free(bio_b64);
-	BIO_free(bio_mem);
-
 	if (ok < 0) {
 		free(*ptr);
 		*ptr = NULL;

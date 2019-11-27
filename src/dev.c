@@ -145,21 +145,30 @@ static int
 fido_dev_open_rx(fido_dev_t *dev, int ms)
 {
 	fido_cbor_info_t	*info = NULL;
+	uint8_t			 data[17];
 	int			 reply_len;
 	int			 r;
 
-	if ((reply_len = fido_rx(dev, CTAP_CMD_INIT, &dev->attr,
-	    sizeof(dev->attr), ms)) < 0) {
+	if ((reply_len = fido_rx(dev, CTAP_CMD_INIT, data,
+	    sizeof(data), ms)) < 0) {
 		fido_log_debug("%s: fido_rx", __func__);
 		r = FIDO_ERR_RX;
 		goto fail;
 	}
 
+	memcpy(&dev->attr.nonce, &data[0], 8);
+	memcpy(&dev->attr.cid, &data[8], 4);
+	dev->attr.protocol = data[12];
+	dev->attr.major = data[13];
+	dev->attr.minor = data[14];
+	dev->attr.build = data[15];
+	dev->attr.flags = data[16];
+
 #ifdef FIDO_FUZZ
 	dev->attr.nonce = dev->nonce;
 #endif
 
-	if ((size_t)reply_len != sizeof(dev->attr) ||
+	if ((size_t)reply_len != sizeof(data) ||
 	    dev->attr.nonce != dev->nonce) {
 		fido_log_debug("%s: invalid nonce", __func__);
 		r = FIDO_ERR_RX;

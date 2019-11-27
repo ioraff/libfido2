@@ -1278,7 +1278,12 @@ cbor_decode_cred_authdata(const cbor_item_t *item, int cose_alg,
 	fido_log_debug("%s: buf=%p, len=%zu", __func__, (const void *)buf, len);
 	fido_log_xxd(buf, len);
 
-	if (fido_buf_read(&buf, &len, authdata, sizeof(*authdata)) < 0) {
+	if (fido_buf_read(&buf, &len, authdata->rp_id_hash,
+	    sizeof(authdata->rp_id_hash)) < 0 ||
+	    fido_buf_read(&buf, &len, &authdata->flags,
+	    sizeof(authdata->flags)) < 0 ||
+	    fido_buf_read(&buf, &len, &authdata->sigcount,
+	    sizeof(authdata->sigcount)) < 0) {
 		fido_log_debug("%s: fido_buf_read", __func__);
 		return (-1);
 	}
@@ -1328,7 +1333,12 @@ cbor_decode_assert_authdata(const cbor_item_t *item, fido_blob_t *authdata_cbor,
 
 	fido_log_debug("%s: buf=%p, len=%zu", __func__, (const void *)buf, len);
 
-	if (fido_buf_read(&buf, &len, authdata, sizeof(*authdata)) < 0) {
+	if (fido_buf_read(&buf, &len, authdata->rp_id_hash,
+	    sizeof(authdata->rp_id_hash)) < 0 ||
+	    fido_buf_read(&buf, &len, &authdata->flags,
+	    sizeof(authdata->flags)) < 0 ||
+	    fido_buf_read(&buf, &len, &authdata->sigcount,
+	    sizeof(authdata->sigcount)) < 0) {
 		fido_log_debug("%s: fido_buf_read", __func__);
 		return (-1);
 	}

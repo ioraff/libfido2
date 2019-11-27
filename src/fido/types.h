@@ -44,7 +44,6 @@ typedef enum {
 typedef void fido_log_handler_t(const char *);
 
 #ifdef _FIDO_INTERNAL
-#include "packed.h"
 #include "blob.h"
 
 /* COSE ES256 (ECDSA over P-256 with SHA-256) public key */
@@ -69,20 +68,12 @@ typedef struct eddsa_pk {
 	unsigned char x[32];
 } eddsa_pk_t;
 
-PACKED_TYPE(fido_authdata_t,
-struct fido_authdata {
+typedef struct fido_authdata {
 	unsigned char rp_id_hash[32]; /* sha256 of fido_rp.id */
 	uint8_t       flags;          /* user present/verified */
 	uint32_t      sigcount;       /* signature counter */
 	/* actually longer */
-})
-
-PACKED_TYPE(fido_attcred_raw_t,
-struct fido_attcred_raw {
-	unsigned char aaguid[16]; /* credential's aaguid */
-	uint16_t      id_len;     /* credential id length */
-	uint8_t       body[];     /* credential id + pubkey */
-})
+} fido_authdata_t;
 
 typedef struct fido_attcred {
 	unsigned char aaguid[16]; /* credential's aaguid */

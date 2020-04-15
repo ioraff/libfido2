@@ -7,8 +7,6 @@
 #ifndef _TYPES_H
 #define _TYPES_H
 
-#include "packed.h"
-
 /* COSE ES256 (ECDSA over P-256 with SHA-256) public key */
 typedef struct es256_pk {
 	unsigned char	x[32];
@@ -31,20 +29,12 @@ typedef struct eddsa_pk {
 	unsigned char x[32];
 } eddsa_pk_t;
 
-PACKED_TYPE(fido_authdata_t,
-struct fido_authdata {
+typedef struct fido_authdata {
 	unsigned char rp_id_hash[32]; /* sha256 of fido_rp.id */
 	uint8_t       flags;          /* user present/verified */
 	uint32_t      sigcount;       /* signature counter */
 	/* actually longer */
-})
-
-PACKED_TYPE(fido_attcred_raw_t,
-struct fido_attcred_raw {
-	unsigned char aaguid[16]; /* credential's aaguid */
-	uint16_t      id_len;     /* credential id length */
-	uint8_t       body[];     /* credential id + pubkey */
-})
+} fido_authdata_t;
 
 typedef struct fido_attcred {
 	unsigned char aaguid[16]; /* credential's aaguid */
@@ -148,9 +138,8 @@ typedef struct fido_dev_info {
 	char    *product;      /* product string */
 } fido_dev_info_t;
 
-PACKED_TYPE(fido_ctap_info_t,
 /* defined in section 8.1.9.1.3 (CTAPHID_INIT) of the fido2 ctap spec */
-struct fido_ctap_info {
+typedef struct fido_ctap_info {
 	uint64_t nonce;    /* echoed nonce */
 	uint32_t cid;      /* channel id */
 	uint8_t  protocol; /* ctaphid protocol id */
@@ -158,7 +147,7 @@ struct fido_ctap_info {
 	uint8_t  minor;    /* minor version number */
 	uint8_t  build;    /* build version number */
 	uint8_t  flags;    /* capabilities flags; see FIDO_CAP_* */
-})
+} fido_ctap_info_t;
 
 typedef struct fido_dev {
 	uint64_t          nonce;     /* issued nonce */

@@ -4,8 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <openssl/evp.h>
-#include <openssl/sha.h>
+#include <bearssl.h>
 
 #include "fido.h"
 #include "fido/es256.h"
@@ -13,62 +12,42 @@
 static int
 do_ecdh(const es256_sk_t *sk, const es256_pk_t *pk, fido_blob_t **ecdh)
 {
-	EVP_PKEY	*pk_evp = NULL;
-	EVP_PKEY	*sk_evp = NULL;
-	EVP_PKEY_CTX	*ctx = NULL;
-	fido_blob_t	*secret = NULL;
-	int		 ok = -1;
+	unsigned char		 q[65];
+	br_sha256_context	 ctx;
+	int			 ok = -1;
 
 	*ecdh = NULL;
 
 	/* allocate blobs for secret & ecdh */
-	if ((secret = fido_blob_new()) == NULL ||
-	    (*ecdh = fido_blob_new()) == NULL)
+	if ((*ecdh = fido_blob_new()) == NULL)
 		goto fail;
 
-	/* wrap the keys as openssl objects */
-	if ((pk_evp = es256_pk_to_EVP_PKEY(pk)) == NULL ||
-	    (sk_evp = es256_sk_to_EVP_PKEY(sk)) == NULL) {
-		fido_log_debug("%s: es256_to_EVP_PKEY", __func__);
-		goto fail;
-	}
-
-	/* set ecdh parameters */
-	if ((ctx = EVP_PKEY_CTX_new(sk_evp, NULL)) == NULL ||
-	    EVP_PKEY_derive_init(ctx) <= 0 ||
-	    EVP_PKEY_derive_set_peer(ctx, pk_evp) <= 0) {
-		fido_log_debug("%s: EVP_PKEY_derive_init", __func__);
-		goto fail;
-	}
+	q[0] = 4;
+	memcpy(q + 1, pk->x, 32);
+	memcpy(q + 1 + 32, pk->y, 32);
 
 	/* perform ecdh */
-	if (EVP_PKEY_derive(ctx, NULL, &secret->len) <= 0 ||
-	    (secret->ptr = calloc(1, secret->len)) == NULL ||
-	    EVP_PKEY_derive(ctx, secret->ptr, &secret->len) <= 0) {
-		fido_log_debug("%s: EVP_PKEY_derive", __func__);
+	if (br_ec_get_default()->mul(q, sizeof(q), sk->d, sizeof(sk->d),
+	    BR_EC_secp256r1) != 1) {
+		fido_log_debug("%s: ECDH", __func__);
 		goto fail;
 	}
 
 	/* use sha256 as a kdf on the resulting secret */
-	(*ecdh)->len = SHA256_DIGEST_LENGTH;
-	if (((*ecdh)->ptr = calloc(1, (*ecdh)->len)) == NULL ||
-	    SHA256(secret->ptr, secret->len, (*ecdh)->ptr) != (*ecdh)->ptr) {
+	(*ecdh)->len = br_sha256_SIZE;
+	if (((*ecdh)->ptr = calloc(1, (*ecdh)->len)) == NULL) {
 		fido_log_debug("%s: sha256", __func__);
 		goto fail;
 	}
+	br_sha256_init(&ctx);
+	br_sha256_update(&ctx, q + 1, 32);
+	br_sha256_out(&ctx, (*ecdh)->ptr);
 
 	ok = 0;
 fail:
-	if (pk_evp != NULL)
-		EVP_PKEY_free(pk_evp);
-	if (sk_evp != NULL)
-		EVP_PKEY_free(sk_evp);
-	if (ctx != NULL)
-		EVP_PKEY_CTX_free(ctx);
+	explicit_bzero(q, sizeof(q));
 	if (ok < 0)
 		fido_blob_free(ecdh);
-
-	fido_blob_free(&secret);
 
 	return (ok);
 }

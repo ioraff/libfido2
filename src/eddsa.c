@@ -4,66 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <openssl/bn.h>
-#include <openssl/ec.h>
-#include <openssl/evp.h>
-#include <openssl/obj_mac.h>
-
 #include <string.h>
 #include "fido.h"
 #include "fido/eddsa.h"
-
-#if defined(LIBRESSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER < 0x10101000L
-EVP_PKEY *
-EVP_PKEY_new_raw_public_key(int type, ENGINE *e, const unsigned char *key,
-    size_t keylen)
-{
-	(void)type;
-	(void)e;
-	(void)key;
-	(void)keylen;
-
-	return (NULL);
-}
-
-int
-EVP_PKEY_get_raw_public_key(const EVP_PKEY *pkey, unsigned char *pub,
-    size_t *len)
-{
-	(void)pkey;
-	(void)pub;
-	(void)len;
-
-	return (0);
-}
-
-int
-EVP_DigestVerify(EVP_MD_CTX *ctx, const unsigned char *sigret, size_t siglen,
-    const unsigned char *tbs, size_t tbslen)
-{
-	(void)ctx;
-	(void)sigret;
-	(void)siglen;
-	(void)tbs;
-	(void)tbslen;
-
-	return (0);
-}
-#endif /* LIBRESSL_VERSION_NUMBER || OPENSSL_VERSION_NUMBER < 0x10101000L */
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-EVP_MD_CTX *
-EVP_MD_CTX_new(void)
-{
-	return (NULL);
-}
-
-void
-EVP_MD_CTX_free(EVP_MD_CTX *ctx)
-{
-	(void)ctx;
-}
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 
 static int
 decode_coord(const cbor_item_t *item, void *xy, size_t xy_len)
@@ -137,33 +80,6 @@ eddsa_pk_from_ptr(eddsa_pk_t *pk, const void *ptr, size_t len)
 		return (FIDO_ERR_INVALID_ARGUMENT);
 
 	memcpy(pk, ptr, sizeof(*pk));
-
-	return (FIDO_OK);
-}
-
-EVP_PKEY *
-eddsa_pk_to_EVP_PKEY(const eddsa_pk_t *k)
-{
-	EVP_PKEY *pkey = NULL;
-
-	if ((pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL, k->x,
-	    sizeof(k->x))) == NULL)
-		fido_log_debug("%s: EVP_PKEY_new_raw_public_key", __func__);
-
-	return (pkey);
-}
-
-int
-eddsa_pk_from_EVP_PKEY(eddsa_pk_t *pk, const EVP_PKEY *pkey)
-{
-	size_t len = 0;
-
-	if (EVP_PKEY_get_raw_public_key(pkey, NULL, &len) != 1 ||
-	    len != sizeof(pk->x))
-		return (FIDO_ERR_INTERNAL);
-	if (EVP_PKEY_get_raw_public_key(pkey, pk->x, &len) != 1 ||
-	    len != sizeof(pk->x))
-		return (FIDO_ERR_INTERNAL);
 
 	return (FIDO_OK);
 }

@@ -52,13 +52,13 @@ endif()
 
 if(MSVC)
 	if((NOT CBOR_INCLUDE_DIRS) OR (NOT CBOR_LIBRARY_DIRS) OR
-	   (NOT CRYPTO_INCLUDE_DIRS) OR (NOT CRYPTO_LIBRARY_DIRS))
+	   (NOT BEARSSL_INCLUDE_DIRS) OR (NOT BEARSSL_LIBRARY_DIRS))
 		message(FATAL_ERROR "please provide definitions for "
-		    "{CBOR,CRYPTO}_{INCLUDE,LIBRARY}_DIRS when building "
+		    "{CBOR,BEARSSL}_{INCLUDE,LIBRARY}_DIRS when building "
 		    "under msvc")
 	endif()
 	set(CBOR_LIBRARIES cbor)
-	set(CRYPTO_LIBRARIES crypto-45)
+	set(BEARSSL_LIBRARIES bearssl)
 	set(MSVC_DISABLED_WARNINGS_LIST
 		"C4200" # nonstandard extension used: zero-sized array in
 			# struct/union;
@@ -79,20 +79,22 @@ if(MSVC)
 else()
 	include(FindPkgConfig)
 	pkg_search_module(CBOR libcbor)
-	pkg_search_module(CRYPTO libcrypto REQUIRED)
+	find_library(BEARSSL_LIBRARIES bearssl)
+	find_path(BEARSSL_INCLUDE_DIRS bearssl.h)
+	if(NOT BEARSSL_LIBRARIES OR NOT BEARSSL_INCLUDE_DIRS)
+		message(FATAL_ERROR "could not find BearSSL")
+	endif()
 
 	# XXX workaround libcbor's missing .pc file
 	if(NOT CBOR_FOUND)
-		check_include_files(cbor.h HAVE_CBOR_H)
-		if(NOT HAVE_CBOR_H)
-			message(FATAL_ERROR "could not find cbor header files")
+		find_library(CBOR_LIBRARIES cbor)
+		find_path(CBOR_INCLUDE_DIRS cbor.h)
+		if(NOT CBOR_LIBRARIES OR NOT CBOR_INCLUDE_DIRS)
+			message(FATAL_ERROR "could not find libcbor")
 		endif()
-		set(CBOR_LIBRARIES "cbor")
 	endif()
 
 	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-		pkg_search_module(UDEV libudev REQUIRED)
-		set(UDEV_NAME "udev")
 		# Define be32toh().
 		add_definitions(-D_GNU_SOURCE)
 	elseif(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
@@ -327,10 +329,9 @@ endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CBOR_INCLUDE_DIRS})
-include_directories(${CRYPTO_INCLUDE_DIRS})
+include_directories(${BEARSSL_INCLUDE_DIRS})
 
 link_directories(${CBOR_LIBRARY_DIRS})
-link_directories(${CRYPTO_LIBRARY_DIRS})
 
 message(STATUS "CMAKE_C_COMPILER: ${CMAKE_C_COMPILER}")
 message(STATUS "CMAKE_C_COMPILER_ID: ${CMAKE_C_COMPILER_ID}")
@@ -340,9 +341,8 @@ message(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 message(STATUS "CBOR_INCLUDE_DIRS: ${CBOR_INCLUDE_DIRS}")
 message(STATUS "CBOR_LIBRARY_DIRS: ${CBOR_LIBRARY_DIRS}")
 message(STATUS "CBOR_LIBRARIES: ${CBOR_LIBRARIES}")
-message(STATUS "CRYPTO_INCLUDE_DIRS: ${CRYPTO_INCLUDE_DIRS}")
-message(STATUS "CRYPTO_LIBRARY_DIRS: ${CRYPTO_LIBRARY_DIRS}")
-message(STATUS "CRYPTO_LIBRARIES: ${CRYPTO_LIBRARIES}")
+message(STATUS "BEARSSL_INCLUDE_DIRS: ${BEARSSL_INCLUDE_DIRS}")
+message(STATUS "BEARSSL_LIBRARIES: ${BEARSSL_LIBRARIES}")
 message(STATUS "BASE_LIBRARIES: ${BASE_LIBRARIES}")
 message(STATUS "VERSION: ${FIDO_VERSION}")
 message(STATUS "LIB_VERSION: ${LIB_VERSION}")
@@ -363,8 +363,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 subdirs(src)
-subdirs(examples)
-subdirs(tools)
+#subdirs(examples)
+#subdirs(tools)
 subdirs(man)
 
 if(NOT WIN32)

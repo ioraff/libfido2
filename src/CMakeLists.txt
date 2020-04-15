@@ -55,7 +55,7 @@ list(APPEND COMPAT_SOURCES
 
 # static library
 add_library(fido2 STATIC ${FIDO_SOURCES} ${COMPAT_SOURCES})
-target_link_libraries(fido2 ${CBOR_LIBRARIES} ${CRYPTO_LIBRARIES}
+target_link_libraries(fido2 ${CBOR_LIBRARIES} ${BEARSSL_LIBRARIES}
 	${UDEV_LIBRARIES} ${BASE_LIBRARIES})
 if(WIN32)
 	if (MINGW)
@@ -73,7 +73,7 @@ install(TARGETS fido2 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 
 # dynamic library
 add_library(fido2_shared SHARED ${FIDO_SOURCES} ${COMPAT_SOURCES})
-target_link_libraries(fido2_shared ${CBOR_LIBRARIES} ${CRYPTO_LIBRARIES}
+target_link_libraries(fido2_shared ${CBOR_LIBRARIES} ${BEARSSL_LIBRARIES}
 	${UDEV_LIBRARIES} ${BASE_LIBRARIES})
 if(WIN32)
 	if (MINGW)

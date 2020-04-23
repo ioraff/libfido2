@@ -10,7 +10,6 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include <openssl/ec.h>
 #include <fido.h>
 
 struct blob {
@@ -28,7 +27,9 @@ struct blob {
 #define FLAG_HMAC	0x20
 #define FLAG_UP		0x40
 
+#if 0
 EC_KEY *read_ec_pubkey(const char *);
+#endif
 fido_dev_t *open_dev(const char *);
 FILE *open_read(const char *);
 FILE *open_write(const char *);
@@ -59,8 +60,10 @@ int token_reset(char *);
 int token_set(int, char **, char *);
 int write_ec_pubkey(FILE *, const void *, size_t);
 int write_rsa_pubkey(FILE *, const void *, size_t);
+#if 0
 RSA *read_rsa_pubkey(const char *);
 EVP_PKEY *read_eddsa_pubkey(const char *);
+#endif
 int write_eddsa_pubkey(FILE *, const void *, size_t);
 void print_cred(FILE *, int, const fido_cred_t *);
 void read_pin(const char *, char *, size_t);

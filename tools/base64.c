@@ -56,15 +56,18 @@ base64_decode(const char *src, void **ptr, size_t *len)
 	unsigned long	 x;
 	int		 ok = -1, pad = 0, c;
 
-	if (src == NULL || ptr == NULL || len == NULL ||
-	    (src_len = strlen(src)) % 4 != 0 ||
+	if (src == NULL || ptr == NULL || len == NULL)
+		return (-1);
+	if ((src_len = strlen(src)) && src[src_len - 1] == '\n')
+		--src_len;
+	if (src_len % 4 != 0 ||
 	    (*ptr = dst = calloc(1, src_len / 4 * 3)) == NULL)
 		return (-1);
 
-	for (i = 0, x = 0, len = 0; src[i]; ++i) {
+	for (i = 0, x = 0; i < src_len; ++i) {
 		c = (unsigned char)src[i];
-		if (c == '=' && (!src[i + 1] || (src[i + 1] == '=' &&
-		    !src[i + 2])))
+		if (c == '=' && (i + 1 == src_len || (src[i + 1] == '=' &&
+		    i + 2 == src_len)))
 			++pad;
 		else if (c >= sizeof(b64) || (!b64[c] && c != 'A'))
 			goto fail;

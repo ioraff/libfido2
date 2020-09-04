@@ -38,8 +38,8 @@ iso7816_new(uint8_t ins, uint8_t p1, uint16_t payload_len)
 	apdu->max_len = max_len;
 	apdu->buf[INS] = ins;
 	apdu->buf[P1] = p1;
-	apdu->buf[LC2] = (payload_len >> 8) & 0xff;
-	apdu->buf[LC3] = payload_len & 0xff;
+	apdu->buf[LC2] = (uint8_t)((payload_len >> 8) & 0xff);
+	apdu->buf[LC3] = (uint8_t)(payload_len & 0xff);
 	apdu->len = DATA;
 
 	return (apdu);

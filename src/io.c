@@ -30,14 +30,15 @@ enum {
 static int
 tx_empty(fido_dev_t *d, uint8_t cmd)
 {
-	uint8_t	pkt[1 + CTAP_RPT_SIZE] = {0};
-	int	n;
+	uint8_t		 pkt[1 + CTAP_MAX_REPORT_LEN] = {0};
+	const size_t	 len = d->tx_len + 1;
+	int		 n;
 
 	memcpy(pkt + 1 + CID, &d->cid, 4);
 	pkt[1 + INIT_CMD] = CTAP_FRAME_INIT | cmd;
 
-	n = d->io.write(d->io_handle, pkt, sizeof(pkt));
-	if (n < 0 || (size_t)n != sizeof(pkt))
+	if (len > sizeof(pkt) || (n = d->io.write(d->io_handle, pkt,
+	    len)) < 0 || (size_t)n != len)
 		return (-1);
 
 	return (0);
@@ -46,18 +47,22 @@ tx_empty(fido_dev_t *d, uint8_t cmd)
 static size_t
 tx_preamble(fido_dev_t *d, uint8_t cmd, const void *buf, size_t count)
 {
-	uint8_t	pkt[1 + CTAP_RPT_SIZE] = {0};
-	int	n;
+	uint8_t		 pkt[1 + CTAP_MAX_REPORT_LEN] = {0};
+	const size_t	 len = d->tx_len + 1;
+	int		 n;
+
+	if (d->tx_len > CTAP_MAX_REPORT_LEN)
+		return (0);
 
 	memcpy(pkt + 1 + CID, &d->cid, 4);
 	pkt[1 + INIT_CMD] = CTAP_FRAME_INIT | cmd;
 	pkt[1 + INIT_BCNTH] = (count >> 8) & 0xff;
 	pkt[1 + INIT_BCNTL] = count & 0xff;
-	count = MIN(count, CTAP_RPT_SIZE - INIT_DATA);
+	count = MIN(count, d->tx_len - CTAP_INIT_HEADER_LEN);
 	memcpy(pkt + 1 + INIT_DATA, buf, count);
 
-	n = d->io.write(d->io_handle, pkt, sizeof(pkt));
-	if (n < 0 || (size_t)n != sizeof(pkt))
+	if (len > sizeof(pkt) || (n = d->io.write(d->io_handle, pkt,
+	    len)) < 0 || (size_t)n != len)
 		return (0);
 
 	return (count);
@@ -66,16 +71,20 @@ tx_preamble(fido_dev_t *d, uint8_t cmd, const void *buf, size_t count)
 static size_t
 tx_frame(fido_dev_t *d, uint8_t seq, const void *buf, size_t count)
 {
-	uint8_t	pkt[1 + CTAP_RPT_SIZE] = {0};
-	int	n;
+	uint8_t		 pkt[1 + CTAP_MAX_REPORT_LEN] = {0};
+	const size_t 	 len = d->tx_len + 1;
+	int		 n;
+
+	if (d->tx_len > CTAP_MAX_REPORT_LEN)
+		return (0);
 
 	memcpy(pkt + 1 + CID, &d->cid, 4);
 	pkt[1 + CONT_SEQ] = seq;
-	count = MIN(count, CTAP_RPT_SIZE - CONT_DATA);
+	count = MIN(count, CTAP_MAX_REPORT_LEN - CTAP_CONT_HEADER_LEN);
 	memcpy(pkt + 1 + CONT_DATA, buf, count);
 
-	n = d->io.write(d->io_handle, pkt, sizeof(pkt));
-	if (n < 0 || (size_t)n != sizeof(pkt))
+	if (len > sizeof(pkt) || (n = d->io.write(d->io_handle, pkt,
+	    len)) < 0 || (size_t)n != len)
 		return (0);
 
 	return (count);
@@ -114,16 +123,12 @@ fido_tx(fido_dev_t *d, uint8_t cmd, const void *buf, size_t count)
 
 	if (d->transport.tx != NULL)
 		return (d->transport.tx(d, cmd, buf, count));
-
 	if (d->io_handle == NULL || d->io.write == NULL || count > UINT16_MAX) {
 		fido_log_debug("%s: invalid argument", __func__);
 		return (-1);
 	}
 
-	if (count == 0)
-		return (tx_empty(d, cmd));
-
-	return (tx(d, cmd, buf, count));
+	return (count == 0 ? tx_empty(d, cmd) : tx(d, cmd, buf, count));
 }
 
 static int
@@ -131,8 +136,10 @@ rx_frame(fido_dev_t *d, uint8_t *fp, int ms)
 {
 	int n;
 
-	n = d->io.read(d->io_handle, (unsigned char *)fp, CTAP_RPT_SIZE, ms);
-	if (n < 0 || (size_t)n != CTAP_RPT_SIZE)
+	memset(fp, 0, CTAP_MAX_REPORT_LEN);
+
+	if (d->rx_len > CTAP_MAX_REPORT_LEN || (n = d->io.read(d->io_handle,
+	    (unsigned char *)fp, d->rx_len, ms)) < 0 || (size_t)n != d->rx_len)
 		return (-1);
 
 	return (0);
@@ -153,8 +160,11 @@ rx_preamble(fido_dev_t *d, uint8_t cmd, uint8_t *fp, int ms)
 	} while (cid == d->cid &&
 	    fp[INIT_CMD] == (CTAP_FRAME_INIT | CTAP_KEEPALIVE));
 
+	if (d->rx_len > CTAP_MAX_REPORT_LEN)
+		return (-1);
+
 	fido_log_debug("%s: initiation frame at %p", __func__, (void *)fp);
-	fido_log_xxd(fp, CTAP_RPT_SIZE);
+	fido_log_xxd(fp, d->rx_len);
 
 #ifdef FIDO_FUZZ
 	fp[INIT_CMD] = (CTAP_FRAME_INIT | cmd);
@@ -172,32 +182,42 @@ rx_preamble(fido_dev_t *d, uint8_t cmd, uint8_t *fp, int ms)
 static int
 rx(fido_dev_t *d, uint8_t cmd, unsigned char *buf, size_t count, int ms)
 {
-	uint8_t		f[CTAP_RPT_SIZE];
-	uint32_t	cid;
-	uint16_t	r, payload_len;
+	uint8_t	f[CTAP_MAX_REPORT_LEN];
+	uint32_t cid;
+	size_t r, payload_len, init_data_len, cont_data_len;
+
+	if (d->rx_len <= CTAP_INIT_HEADER_LEN ||
+	    d->rx_len <= CTAP_CONT_HEADER_LEN)
+		return (-1);
+
+	init_data_len = d->rx_len - CTAP_INIT_HEADER_LEN;
+	cont_data_len = d->rx_len - CTAP_CONT_HEADER_LEN;
+
+	if (d->rx_len > CTAP_MAX_REPORT_LEN)
+		return (-1);
 
 	if (rx_preamble(d, cmd, f, ms) < 0) {
 		fido_log_debug("%s: rx_preamble", __func__);
 		return (-1);
 	}
 
-	payload_len = (f[INIT_BCNTH] << 8) | f[INIT_BCNTL];
-	fido_log_debug("%s: payload_len=%zu", __func__, (size_t)payload_len);
+	payload_len = (size_t)((f[INIT_BCNTH] << 8) | f[INIT_BCNTL]);
+	fido_log_debug("%s: payload_len=%zu", __func__, payload_len);
 
-	if (count < (size_t)payload_len) {
+	if (count < payload_len) {
 		fido_log_debug("%s: count < payload_len", __func__);
 		return (-1);
 	}
 
-	if (payload_len < CTAP_RPT_SIZE - INIT_DATA) {
-		memcpy(buf, f + INIT_DATA, payload_len);
-		return (payload_len);
+	if (payload_len < init_data_len) {
+		memcpy(buf, f + CTAP_INIT_HEADER_LEN, payload_len);
+		return ((int)payload_len);
 	}
 
-	memcpy(buf, f + INIT_DATA, CTAP_RPT_SIZE - INIT_DATA);
-	r = CTAP_RPT_SIZE - INIT_DATA;
+	memcpy(buf, f + CTAP_INIT_HEADER_LEN, init_data_len);
+	r = init_data_len;
 
-	for (int seq = 0; (size_t)r < payload_len; seq++) {
+	for (int seq = 0; r < payload_len; seq++) {
 		if (rx_frame(d, f, ms) < 0) {
 			fido_log_debug("%s: rx_frame", __func__);
 			return (-1);
@@ -205,13 +225,13 @@ rx(fido_dev_t *d, uint8_t cmd, unsigned char *buf, size_t count, int ms)
 
 		fido_log_debug("%s: continuation frame at %p", __func__,
 		    (void *)&f);
-		fido_log_xxd(&f, sizeof(f));
+		fido_log_xxd(&f, d->rx_len);
 
 		memcpy(&cid, f + CID, 4);
 
 #ifdef FIDO_FUZZ
 		cid = d->cid;
-		f[CONT_SEQ] = seq;
+		f[CONT_SEQ] = (uint8_t)seq;
 #endif
 
 		if (cid != d->cid || f[CONT_SEQ] != seq) {
@@ -220,17 +240,16 @@ rx(fido_dev_t *d, uint8_t cmd, unsigned char *buf, size_t count, int ms)
 			return (-1);
 		}
 
-		if ((size_t)(payload_len - r) > CTAP_RPT_SIZE - CONT_DATA) {
-			memcpy(buf + r, f + CONT_DATA,
-			    CTAP_RPT_SIZE - CONT_DATA);
-			r += CTAP_RPT_SIZE - CONT_DATA;
+		if (payload_len - r > cont_data_len) {
+			memcpy(buf + r, f + CTAP_CONT_HEADER_LEN, cont_data_len);
+			r += cont_data_len;
 		} else {
-			memcpy(buf + r, f + CONT_DATA, payload_len - r);
-			r += (payload_len - r); /* break */
+			memcpy(buf + r, f + CTAP_CONT_HEADER_LEN, payload_len - r);
+			r += payload_len - r; /* break */
 		}
 	}
 
-	return (r);
+	return ((int)r);
 }
 
 int
@@ -243,15 +262,13 @@ fido_rx(fido_dev_t *d, uint8_t cmd, void *buf, size_t count, int ms)
 
 	if (d->transport.rx != NULL)
 		return (d->transport.rx(d, cmd, buf, count, ms));
-
 	if (d->io_handle == NULL || d->io.read == NULL || count > UINT16_MAX) {
 		fido_log_debug("%s: invalid argument", __func__);
 		return (-1);
 	}
-
 	if ((n = rx(d, cmd, buf, count, ms)) >= 0) {
 		fido_log_debug("%s: buf=%p, len=%d", __func__, (void *)buf, n);
-		fido_log_xxd(buf, n);
+		fido_log_xxd(buf, (size_t)n);
 	}
 
 	return (n);

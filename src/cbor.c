@@ -384,7 +384,7 @@ cbor_flatten_vector(cbor_item_t *argv[], size_t argc)
 		return (NULL);
 
 	for (i = 0; i < argc; i++)
-		if (cbor_add_arg(map, i + 1, argv[i]) < 0)
+		if (cbor_add_arg(map, (uint8_t)(i + 1), argv[i]) < 0)
 			break;
 
 	if (i != argc) {
@@ -581,7 +581,9 @@ cbor_encode_extensions(const fido_cred_ext_t *ext)
 		}
 	}
 	if (ext->mask & FIDO_EXT_CRED_PROTECT) {
-		if (cbor_add_uint8(item, "credProtect", ext->prot) < 0) {
+		if (ext->prot < 0 || ext->prot > UINT8_MAX ||
+		    cbor_add_uint8(item, "credProtect",
+		    (uint8_t)ext->prot) < 0) {
 			cbor_decref(&item);
 			return (NULL);
 		}
@@ -690,7 +692,6 @@ cbor_encode_change_pin_auth(const fido_blob_t *key, const fido_blob_t *new_pin,
 	fido_blob_t	*npe = NULL; /* new pin, encrypted */
 	fido_blob_t	*ph = NULL;  /* pin hash */
 	fido_blob_t	*phe = NULL; /* pin hash, encrypted */
-	int		 ok = -1;
 
 	if ((npe = fido_blob_new()) == NULL ||
 	    (ph = fido_blob_new()) == NULL ||
@@ -727,18 +728,10 @@ cbor_encode_change_pin_auth(const fido_blob_t *key, const fido_blob_t *new_pin,
 		goto fail;
 	}
 
-	ok = 0;
 fail:
 	fido_blob_free(&npe);
 	fido_blob_free(&ph);
 	fido_blob_free(&phe);
-
-	if (ok < 0) {
-		if (item != NULL) {
-			cbor_decref(&item);
-			item = NULL;
-		}
-	}
 
 	return (item);
 }
@@ -1271,7 +1264,7 @@ cbor_decode_cred_authdata(const cbor_item_t *item, int cose_alg,
 	}
 
 	if (authdata_ext != NULL) {
-		if ((authdata->flags & CTAP_AUTHDATA_EXT_DATA) != 0 && 
+		if ((authdata->flags & CTAP_AUTHDATA_EXT_DATA) != 0 &&
 		    decode_extensions(&buf, &len, authdata_ext) < 0)
 			return (-1);
 	}

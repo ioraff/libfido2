@@ -13,9 +13,11 @@ if(WIN32 AND NOT CYGWIN AND NOT MSYS)
 		../openbsd-compat/bsd-getline.c
 		../openbsd-compat/explicit_bzero_win32.c
 		../openbsd-compat/getopt_long.c
-		../openbsd-compat/posix_win.c
 		../openbsd-compat/readpassphrase_win32.c
 	)
+	if (BUILD_SHARED_LIBS)
+		list(APPEND COMPAT_SOURCES ../openbsd-compat/posix_win.c)
+	endif()
 else()
 	list(APPEND COMPAT_SOURCES ../openbsd-compat/readpassphrase.c)
 endif()
@@ -56,9 +58,16 @@ add_executable(fido2-token
 	${COMPAT_SOURCES}
 )
 
-target_link_libraries(fido2-cred ${CRYPTO_LIBRARIES} fido2_shared)
-#target_link_libraries(fido2-assert ${CRYPTO_LIBRARIES} fido2_shared)
-target_link_libraries(fido2-token ${CRYPTO_LIBRARIES} fido2_shared)
+# set the library to link against
+if(BUILD_SHARED_LIBS)
+	set(_FIDO2_LIBRARY fido2_shared)
+else()
+	set(_FIDO2_LIBRARY fido2)
+endif()
+
+target_link_libraries(fido2-cred ${CRYPTO_LIBRARIES} ${_FIDO2_LIBRARY})
+#target_link_libraries(fido2-assert ${CRYPTO_LIBRARIES} ${_FIDO2_LIBRARY})
+target_link_libraries(fido2-token ${CRYPTO_LIBRARIES} ${_FIDO2_LIBRARY})
 
 #install(TARGETS fido2-cred fido2-assert fido2-token
 install(TARGETS fido2-cred fido2-token

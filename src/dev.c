@@ -4,85 +4,14 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#ifdef HAVE_SYS_RANDOM_H
-#include <sys/random.h>
-#endif
 
 #include <bearssl.h>
 
-#include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
 
 #include "fido.h"
-
-#if defined(_WIN32)
-#include <windows.h>
-
-#include <winternl.h>
-#include <winerror.h>
-#include <stdio.h>
-#include <bcrypt.h>
-#include <sal.h>
-
-static int
-obtain_nonce(uint64_t *nonce)
-{
-	NTSTATUS status;
-
-	status = BCryptGenRandom(NULL, (unsigned char *)nonce, sizeof(*nonce),
-	    BCRYPT_USE_SYSTEM_PREFERRED_RNG);
-
-	if (!NT_SUCCESS(status))
-		return (-1);
-
-	return (0);
-}
-#elif defined(HAVE_ARC4RANDOM_BUF)
-static int
-obtain_nonce(uint64_t *nonce)
-{
-	arc4random_buf(nonce, sizeof(*nonce));
-	return (0);
-}
-#elif defined(HAVE_GETRANDOM)
-static int
-obtain_nonce(uint64_t *nonce)
-{
-	if (getrandom(nonce, sizeof(*nonce), 0) < 0)
-		return (-1);
-	return (0);
-}
-#elif defined(HAVE_DEV_URANDOM)
-static int
-obtain_nonce(uint64_t *nonce)
-{
-	int	fd = -1;
-	int	ok = -1;
-	ssize_t	r;
-
-	if ((fd = open(FIDO_RANDOM_DEV, O_RDONLY)) < 0)
-		goto fail;
-	if ((r = read(fd, nonce, sizeof(*nonce))) < 0 ||
-	    (size_t)r != sizeof(*nonce))
-		goto fail;
-
-	ok = 0;
-fail:
-	if (fd != -1)
-		close(fd);
-
-	return (ok);
-}
-#else
-#error "please provide an implementation of obtain_nonce() for your platform"
-#endif /* _WIN32 */
 
 #ifndef TLS
 #define TLS
@@ -143,6 +72,10 @@ fido_dev_set_flags(fido_dev_t *dev, const fido_cbor_info_t *info)
 				dev->flags |= FIDO_DEV_PIN_SET;
 			else
 				dev->flags |= FIDO_DEV_PIN_UNSET;
+		} else if (strcmp(ptr[i], "credMgmt") == 0 ||
+			   strcmp(ptr[i], "credentialMgmtPreview") == 0) {
+			if (val[i] == true)
+				dev->flags |= FIDO_DEV_CREDMAN;
 		}
 }
 
@@ -162,8 +95,13 @@ fido_dev_open_tx(fido_dev_t *dev, const char *path)
 		return (FIDO_ERR_INVALID_ARGUMENT);
 	}
 
-	if (obtain_nonce(&dev->nonce) < 0) {
-		fido_log_debug("%s: obtain_nonce", __func__);
+	if (dev->cid != CTAP_CID_BROADCAST) {
+		fido_log_debug("%s: cid=0x%x", __func__, dev->cid);
+		return (FIDO_ERR_INVALID_ARGUMENT);
+	}
+
+	if (fido_get_random(&dev->nonce, sizeof(dev->nonce)) < 0) {
+		fido_log_debug("%s: fido_get_random", __func__);
 		return (FIDO_ERR_INTERNAL);
 	}
 
@@ -379,6 +317,7 @@ fido_dev_close(fido_dev_t *dev)
 
 	dev->io.close(dev->io_handle);
 	dev->io_handle = NULL;
+	dev->cid = CTAP_CID_BROADCAST;
 
 	return (FIDO_OK);
 }
@@ -562,8 +501,6 @@ fido_dev_new_with_info(const fido_dev_info_t *di)
 	if ((dev = calloc(1, sizeof(*dev))) == NULL)
 		return (NULL);
 
-	dev->cid = CTAP_CID_BROADCAST;
-
 	if (di->io.open == NULL || di->io.close == NULL ||
 	    di->io.read == NULL || di->io.write == NULL) {
 		fido_log_debug("%s: NULL function", __func__);
@@ -572,7 +509,9 @@ fido_dev_new_with_info(const fido_dev_info_t *di)
 	}
 
 	dev->io = di->io;
+	dev->io_own = di->transport.tx != NULL || di->transport.rx != NULL;
 	dev->transport = di->transport;
+	dev->cid = CTAP_CID_BROADCAST;
 
 	if ((dev->path = strdup(di->path)) == NULL) {
 		fido_log_debug("%s: strdup", __func__);
@@ -649,6 +588,12 @@ bool
 fido_dev_supports_cred_prot(const fido_dev_t *dev)
 {
 	return (dev->flags & FIDO_DEV_CRED_PROT);
+}
+
+bool
+fido_dev_supports_credman(const fido_dev_t *dev)
+{
+	return (dev->flags & FIDO_DEV_CREDMAN);
 }
 
 void

@@ -88,6 +88,10 @@ void *fido_hid_open(const char *);
 void  fido_hid_close(void *);
 int fido_hid_read(void *, unsigned char *, size_t, int);
 int fido_hid_write(void *, const unsigned char *, size_t);
+int fido_hid_get_usage(const uint8_t *, size_t, uint32_t *);
+int fido_hid_get_report_len(const uint8_t *, size_t, size_t *, size_t *);
+int fido_hid_unix_open(const char *);
+int fido_hid_unix_wait(int, int);
 size_t fido_hid_report_in_len(void *);
 size_t fido_hid_report_out_len(void *);
 
@@ -134,6 +138,7 @@ void fido_cred_reset_rx(fido_cred_t *);
 void fido_cred_reset_tx(fido_cred_t *);
 int fido_check_rp_id(const char *, const unsigned char *);
 int fido_check_flags(uint8_t, fido_opt_t, fido_opt_t);
+int fido_get_random(void *, size_t);
 
 /* crypto */
 int fido_verify_sig_es256(const fido_blob_t *, const es256_pk_t *,
@@ -162,6 +167,7 @@ uint32_t uniform_random(uint32_t);
 #define FIDO_DEV_PIN_SET	0x01
 #define FIDO_DEV_PIN_UNSET	0x02
 #define FIDO_DEV_CRED_PROT	0x04
+#define FIDO_DEV_CREDMAN	0x08
 
 /* miscellanea */
 #define FIDO_DUMMY_CLIENTDATA	""

@@ -117,10 +117,13 @@ list(APPEND MAN_ALIAS
 	fido_cbor_info_new fido_dev_get_cbor_info
 	fido_cred_new fido_cred_authdata_len
 	fido_cred_new fido_cred_authdata_ptr
+	fido_cred_new fido_cred_authdata_raw_len
+	fido_cred_new fido_cred_authdata_raw_ptr
 	fido_cred_new fido_cred_clientdata_hash_len
 	fido_cred_new fido_cred_clientdata_hash_ptr
 	fido_cred_new fido_cred_display_name
 	fido_cred_new fido_cred_flags
+	fido_cred_new fido_cred_sigcount
 	fido_cred_new fido_cred_fmt
 	fido_cred_new fido_cred_free
 	fido_cred_new fido_cred_id_len
@@ -170,6 +173,7 @@ list(APPEND MAN_ALIAS
 	fido_cred_set_authdata fido_cred_set_user
 	fido_cred_set_authdata fido_cred_set_uv
 	fido_cred_set_authdata fido_cred_set_x509
+	fido_dev_get_touch_begin fido_dev_get_touch_status
 	fido_dev_info_manifest fido_dev_info_free
 	fido_dev_info_manifest fido_dev_info_manufacturer_string
 	fido_dev_info_manifest fido_dev_info_new
@@ -186,13 +190,15 @@ list(APPEND MAN_ALIAS
 	fido_dev_open fido_dev_force_u2f
 	fido_dev_open fido_dev_free
 	fido_dev_open fido_dev_is_fido2
-	fido_dev_open fido_dev_supports_cred_prot
-	fido_dev_open fido_dev_supports_pin
 	fido_dev_open fido_dev_major
 	fido_dev_open fido_dev_minor
 	fido_dev_open fido_dev_new
 	fido_dev_open fido_dev_protocol
+	fido_dev_open fido_dev_supports_credman
+	fido_dev_open fido_dev_supports_cred_prot
+	fido_dev_open fido_dev_supports_pin
 	fido_dev_set_pin fido_dev_get_retry_count
+	fido_dev_set_pin fido_dev_get_uv_retry_count
 	fido_dev_set_pin fido_dev_reset
 	rs256_pk_new rs256_pk_free
 	rs256_pk_new rs256_pk_from_ptr

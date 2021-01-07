@@ -89,11 +89,14 @@
 		fido_cbor_info_versions_ptr;
 		fido_cred_authdata_len;
 		fido_cred_authdata_ptr;
+		fido_cred_authdata_raw_len;
+		fido_cred_authdata_raw_ptr;
 		fido_cred_clientdata_hash_len;
 		fido_cred_clientdata_hash_ptr;
 		fido_cred_display_name;
 		fido_cred_exclude;
 		fido_cred_flags;
+		fido_cred_sigcount;
 		fido_cred_fmt;
 		fido_cred_free;
 		fido_cred_id_len;
@@ -159,6 +162,7 @@
 		fido_dev_get_assert;
 		fido_dev_get_cbor_info;
 		fido_dev_get_retry_count;
+		fido_dev_get_uv_retry_count;
 		fido_dev_get_touch_begin;
 		fido_dev_get_touch_status;
 		fido_dev_has_pin;
@@ -182,8 +186,11 @@
 		fido_dev_set_io_functions;
 		fido_dev_set_pin;
 		fido_dev_set_transport_functions;
+		fido_dev_supports_credman;
 		fido_dev_supports_cred_prot;
 		fido_dev_supports_pin;
+		fido_hid_get_report_len;
+		fido_hid_get_usage;
 		fido_init;
 		fido_set_log_handler;
 		fido_strerr;

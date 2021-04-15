@@ -4,13 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-
 #include <bearssl.h>
-
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "fido.h"
 
 #ifndef TLS
@@ -23,6 +17,7 @@ typedef struct dev_manifest_func_node {
 } dev_manifest_func_node_t;
 
 static TLS dev_manifest_func_node_t *manifest_funcs = NULL;
+static TLS bool disable_u2f_fallback;
 
 static void
 find_manifest_func_node(dev_manifest_func_t f, dev_manifest_func_node_t **curr,
@@ -49,34 +44,65 @@ set_random_report_len(fido_dev_t *dev)
 #endif
 
 static void
-fido_dev_set_flags(fido_dev_t *dev, const fido_cbor_info_t *info)
+fido_dev_set_extension_flags(fido_dev_t *dev, const fido_cbor_info_t *info)
 {
-	char * const	*ptr;
-	const bool	*val;
-	size_t		 len;
-
-	ptr = fido_cbor_info_extensions_ptr(info);
-	len = fido_cbor_info_extensions_len(info);
+	char * const	*ptr = fido_cbor_info_extensions_ptr(info);
+	size_t		 len = fido_cbor_info_extensions_len(info);
 
 	for (size_t i = 0; i < len; i++)
 		if (strcmp(ptr[i], "credProtect") == 0)
 			dev->flags |= FIDO_DEV_CRED_PROT;
+}
 
-	ptr = fido_cbor_info_options_name_ptr(info);
-	val = fido_cbor_info_options_value_ptr(info);
-	len = fido_cbor_info_options_len(info);
+static void
+fido_dev_set_option_flags(fido_dev_t *dev, const fido_cbor_info_t *info)
+{
+	char * const	*ptr = fido_cbor_info_options_name_ptr(info);
+	const bool	*val = fido_cbor_info_options_value_ptr(info);
+	size_t		 len = fido_cbor_info_options_len(info);
 
 	for (size_t i = 0; i < len; i++)
 		if (strcmp(ptr[i], "clientPin") == 0) {
-			if (val[i] == true)
-				dev->flags |= FIDO_DEV_PIN_SET;
-			else
-				dev->flags |= FIDO_DEV_PIN_UNSET;
+			dev->flags |= val[i] ? FIDO_DEV_PIN_SET : FIDO_DEV_PIN_UNSET;
 		} else if (strcmp(ptr[i], "credMgmt") == 0 ||
 			   strcmp(ptr[i], "credentialMgmtPreview") == 0) {
-			if (val[i] == true)
+			if (val[i])
 				dev->flags |= FIDO_DEV_CREDMAN;
+		} else if (strcmp(ptr[i], "uv") == 0) {
+			dev->flags |= val[i] ? FIDO_DEV_UV_SET : FIDO_DEV_UV_UNSET;
+		} else if (strcmp(ptr[i], "pinUvAuthToken") == 0) {
+			if (val[i])
+				dev->flags |= FIDO_DEV_TOKEN_PERMS;
 		}
+}
+
+static void
+fido_dev_set_protocol_flags(fido_dev_t *dev, const fido_cbor_info_t *info)
+{
+	const uint8_t	*ptr = fido_cbor_info_protocols_ptr(info);
+	size_t		 len = fido_cbor_info_protocols_len(info);
+
+	for (size_t i = 0; i < len; i++)
+		switch (ptr[i]) {
+		case CTAP_PIN_PROTOCOL1:
+			dev->flags |= FIDO_DEV_PIN_PROTOCOL1;
+			break;
+		case CTAP_PIN_PROTOCOL2:
+			dev->flags |= FIDO_DEV_PIN_PROTOCOL2;
+			break;
+		default:
+			fido_log_debug("%s: unknown protocol %u", __func__,
+			    ptr[i]);
+			break;
+		}
+}
+
+static void
+fido_dev_set_flags(fido_dev_t *dev, const fido_cbor_info_t *info)
+{
+	fido_dev_set_extension_flags(dev, info);
+	fido_dev_set_option_flags(dev, info);
+	fido_dev_set_protocol_flags(dev, info);
 }
 
 static int
@@ -193,7 +219,12 @@ fido_dev_open_rx(fido_dev_t *dev, int ms)
 			r = FIDO_ERR_INTERNAL;
 			goto fail;
 		}
-		if (fido_dev_get_cbor_info_wait(dev, info, ms) != FIDO_OK) {
+		if ((r = fido_dev_get_cbor_info_wait(dev, info,
+		    ms)) != FIDO_OK) {
+			fido_log_debug("%s: fido_dev_cbor_info_wait: %d",
+			    __func__, r);
+			if (disable_u2f_fallback)
+				goto fail;
 			fido_log_debug("%s: falling back to u2f", __func__);
 			fido_dev_force_u2f(dev);
 		} else {
@@ -202,8 +233,9 @@ fido_dev_open_rx(fido_dev_t *dev, int ms)
 	}
 
 	if (fido_dev_is_fido2(dev) && info != NULL) {
+		dev->maxmsgsize = fido_cbor_info_maxmsgsiz(info);
 		fido_log_debug("%s: FIDO_MAXMSG=%d, maxmsgsiz=%lu", __func__,
-		    FIDO_MAXMSG, (unsigned long)fido_cbor_info_maxmsgsiz(info));
+		    FIDO_MAXMSG, (unsigned long)dev->maxmsgsize);
 	}
 
 	r = FIDO_OK;
@@ -280,6 +312,11 @@ fido_dev_info_manifest(fido_dev_info_t *devlist, size_t ilen, size_t *olen)
 	if (fido_dev_register_manifest_func(fido_hid_manifest) != FIDO_OK)
 		return (FIDO_ERR_INTERNAL);
 
+#ifdef NFC_LINUX
+	if (fido_dev_register_manifest_func(fido_nfc_manifest) != FIDO_OK)
+		return (FIDO_ERR_INTERNAL);
+#endif
+
 	for (curr = manifest_funcs; curr != NULL; curr = curr->next) {
 		curr_olen = 0;
 		m_func = curr->manifest_func;
@@ -306,6 +343,28 @@ fido_dev_open_with_info(fido_dev_t *dev)
 int
 fido_dev_open(fido_dev_t *dev, const char *path)
 {
+#ifdef NFC_LINUX
+	/*
+	 * this is a hack to get existing applications up and running with nfc;
+	 * it will *NOT* be part of a libfido2 release. to support nfc in your
+	 * application, please change it to use fido_dev_open_with_info().
+	 */
+	if (strncmp(path, "/sys", strlen("/sys")) == 0 && strlen(path) > 4 &&
+	    path[strlen(path) - 4] == 'n' && path[strlen(path) - 3] == 'f' &&
+	    path[strlen(path) - 2] == 'c') {
+		dev->io_own = true;
+		dev->io = (fido_dev_io_t) {
+			fido_nfc_open,
+			fido_nfc_close,
+			fido_nfc_read,
+			fido_nfc_write,
+		};
+		dev->transport = (fido_dev_transport_t) {
+			fido_nfc_rx,
+			fido_nfc_tx,
+		};
+	}
+#endif
 	return (fido_dev_open_wait(dev, path, -1));
 }
 
@@ -320,6 +379,19 @@ fido_dev_close(fido_dev_t *dev)
 	dev->cid = CTAP_CID_BROADCAST;
 
 	return (FIDO_OK);
+}
+
+int
+fido_dev_set_sigmask(fido_dev_t *dev, const fido_sigset_t *sigmask)
+{
+	if (dev->io_own || dev->io_handle == NULL || sigmask == NULL)
+		return (FIDO_ERR_INVALID_ARGUMENT);
+
+#ifdef NFC_LINUX
+	if (dev->transport.rx == fido_nfc_rx)
+		return (fido_nfc_set_sigmask(dev->io_handle, sigmask));
+#endif
+	return (fido_hid_set_sigmask(dev->io_handle, sigmask));
 }
 
 int
@@ -381,7 +453,7 @@ fido_dev_get_touch_begin(fido_dev_t *dev)
 
 	if (fido_dev_supports_pin(dev)) {
 		if ((argv[7] = cbor_new_definite_bytestring()) == NULL ||
-		    (argv[8] = cbor_encode_pin_opt()) == NULL) {
+		    (argv[8] = cbor_encode_pin_opt(dev)) == NULL) {
 			fido_log_debug("%s: cbor encode", __func__);
 			goto fail;
 		}
@@ -472,6 +544,8 @@ fido_init(int flags)
 {
 	if (flags & FIDO_DEBUG || getenv("FIDO_DEBUG") != NULL)
 		fido_log_init();
+
+	disable_u2f_fallback = (flags & FIDO_DISABLE_U2F_FALLBACK);
 }
 
 fido_dev_t *
@@ -596,6 +670,24 @@ fido_dev_supports_credman(const fido_dev_t *dev)
 	return (dev->flags & FIDO_DEV_CREDMAN);
 }
 
+bool
+fido_dev_supports_uv(const fido_dev_t *dev)
+{
+	return (dev->flags & (FIDO_DEV_UV_SET|FIDO_DEV_UV_UNSET));
+}
+
+bool
+fido_dev_has_uv(const fido_dev_t *dev)
+{
+	return (dev->flags & FIDO_DEV_UV_SET);
+}
+
+bool
+fido_dev_supports_permissions(const fido_dev_t *dev)
+{
+	return (dev->flags & FIDO_DEV_TOKEN_PERMS);
+}
+
 void
 fido_dev_force_u2f(fido_dev_t *dev)
 {
@@ -607,4 +699,21 @@ void
 fido_dev_force_fido2(fido_dev_t *dev)
 {
 	dev->attr.flags |= FIDO_CAP_CBOR;
+}
+
+uint8_t
+fido_dev_get_pin_protocol(const fido_dev_t *dev)
+{
+	if (dev->flags & FIDO_DEV_PIN_PROTOCOL2)
+		return (CTAP_PIN_PROTOCOL2);
+	else if (dev->flags & FIDO_DEV_PIN_PROTOCOL1)
+		return (CTAP_PIN_PROTOCOL1);
+
+	return (0);
+}
+
+uint64_t
+fido_dev_maxmsgsize(const fido_dev_t *dev)
+{
+	return (dev->maxmsgsize);
 }

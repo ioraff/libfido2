@@ -24,18 +24,27 @@ git checkout v0.8.0
 mkdir build
 (cd build && cmake -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw.cmake \
 	-DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=/fakeroot ..)
-make -C build
+make -j"$(nproc)" -C build
 sudo make -C build install
 cd ..
 
-# Build and install OpenSSL 1.1.1i.
+# Build and install OpenSSL 1.1.1k.
 git clone git://github.com/openssl/openssl
 cd openssl
-git checkout OpenSSL_1_1_1i
+git checkout OpenSSL_1_1_1k
 ./Configure mingw --prefix=/fakeroot --openssldir=/fakeroot/openssl \
 	--cross-compile-prefix=i686-w64-mingw32-
-make
+make -j"$(nproc)"
 sudo make install_sw
+cd ..
+
+# Build and install zlib.
+git clone https://github.com/madler/zlib
+cd zlib
+git checkout v1.2.11
+make -fwin32/Makefile.gcc PREFIX=i686-w64-mingw32-
+sudo make -fwin32/Makefile.gcc PREFIX=i686-w64-mingw32- DESTDIR=/fakeroot \
+	INCLUDE_PATH=/include LIBRARY_PATH=/lib BINARY_PATH=/bin install
 cd ..
 
 # Build and install libfido2.
@@ -43,5 +52,5 @@ export PKG_CONFIG_PATH=/fakeroot/lib/pkgconfig
 mkdir build
 (cd build && cmake -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw.cmake \
 	-DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/fakeroot ..)
-make -C build
+make -j"$(nproc)" -C build
 sudo make -C build install

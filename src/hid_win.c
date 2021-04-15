@@ -7,7 +7,6 @@
 #include <sys/types.h>
 
 #include <fcntl.h>
-#include <string.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -110,8 +109,7 @@ get_int(HANDLE dev, int16_t *vendor_id, int16_t *product_id)
 
 	attr.Size = sizeof(attr);
 
-	if (HidD_GetAttributes(dev, &attr) == false ||
-	    attr.VendorID > INT16_MAX || attr.ProductID > INT16_MAX) {
+	if (HidD_GetAttributes(dev, &attr) == false) {
 		fido_log_debug("%s: HidD_GetAttributes", __func__);
 		return (-1);
 	}
@@ -424,7 +422,9 @@ fido_hid_close(void *handle)
 	if (ctx->overlap.hEvent != NULL) {
 		if (ctx->report_pending) {
 			fido_log_debug("%s: report_pending", __func__);
-			CancelIo(ctx->dev);
+			if (CancelIoEx(ctx->dev, &ctx->overlap) == 0)
+				fido_log_debug("%s CancelIoEx: 0x%lx",
+				    __func__, GetLastError());
 		}
 		CloseHandle(ctx->overlap.hEvent);
 	}
@@ -432,6 +432,15 @@ fido_hid_close(void *handle)
 	explicit_bzero(ctx->report, sizeof(ctx->report));
 	CloseHandle(ctx->dev);
 	free(ctx);
+}
+
+int
+fido_hid_set_sigmask(void *handle, const fido_sigset_t *sigmask)
+{
+	(void)handle;
+	(void)sigmask;
+
+	return (FIDO_ERR_INTERNAL);
 }
 
 int

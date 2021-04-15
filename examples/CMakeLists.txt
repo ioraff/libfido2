@@ -62,6 +62,7 @@ target_link_libraries(retries ${_FIDO2_LIBRARY})
 # select
 add_executable(select select.c ${COMPAT_SOURCES})
 target_link_libraries(select ${_FIDO2_LIBRARY})
+
 if(MINGW)
 	# needed for nanosleep() in mingw
 	target_link_libraries(select winpthread)

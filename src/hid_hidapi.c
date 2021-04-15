@@ -11,9 +11,8 @@
 #include <fcntl.h>
 #endif
 
+#include <errno.h>
 #include <hidapi.h>
-#include <stdlib.h>
-#include <string.h>
 #include <wchar.h>
 
 #include "fido.h"
@@ -109,16 +108,16 @@ get_report_descriptor(const char *path, struct hidraw_report_descriptor *hrd)
 		return -1;
 	}
 
-	if (ioctl(fd, HIDIOCGRDESCSIZE, &s) < 0 || s < 0 ||
+	if (ioctl(fd, IOCTL_REQ(HIDIOCGRDESCSIZE), &s) < 0 || s < 0 ||
 	    (unsigned)s > HID_MAX_DESCRIPTOR_SIZE) {
-		fido_log_debug("%s: ioctl HIDIOCGRDESCSIZE", __func__);
+		fido_log_error(errno, "%s: ioctl HIDIOCGRDESCSIZE", __func__);
 		goto fail;
 	}
 
 	hrd->size = (unsigned)s;
 
-	if (ioctl(fd, HIDIOCGRDESC, hrd) < 0) {
-		fido_log_debug("%s: ioctl HIDIOCGRDESC", __func__);
+	if (ioctl(fd, IOCTL_REQ(HIDIOCGRDESC), hrd) < 0) {
+		fido_log_error(errno, "%s: ioctl HIDIOCGRDESC", __func__);
 		goto fail;
 	}
 
@@ -187,6 +186,15 @@ fido_hid_close(void *handle)
 
 	hid_close(ctx->handle);
 	free(ctx);
+}
+
+int
+fido_hid_set_sigmask(void *handle, const fido_sigset_t *sigmask)
+{
+	(void)handle;
+	(void)sigmask;
+
+	return (FIDO_ERR_INTERNAL);
 }
 
 int

@@ -6,11 +6,10 @@
 
 #include <sys/types.h>
 
+#include <errno.h>
 #include <fcntl.h>
-#include <string.h>
-#ifdef HAVE_UNISTD_H
+#include <signal.h>
 #include <unistd.h>
-#endif
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
@@ -314,9 +313,13 @@ report_callback(void *context, IOReturn result, void *dev, IOHIDReportType type,
 		return;
 	}
 
-	if ((r = write(ctx->report_pipe[1], ptr, (size_t)len)) < 0 ||
-	    (size_t)r != (size_t)len) {
-		fido_log_debug("%s: write", __func__);
+	if ((r = write(ctx->report_pipe[1], ptr, (size_t)len)) == -1) {
+		fido_log_error(errno, "%s: write", __func__);
+		return;
+	}
+
+	if (r < 0 || (size_t)r != (size_t)len) {
+		fido_log_debug("%s: %zd != %zu", __func__, r, (size_t)len);
 		return;
 	}
 }
@@ -337,12 +340,12 @@ set_nonblock(int fd)
 	int flags;
 
 	if ((flags = fcntl(fd, F_GETFL)) == -1) {
-		fido_log_debug("%s: fcntl F_GETFL", __func__);
+		fido_log_error(errno, "%s: fcntl F_GETFL", __func__);
 		return (-1);
 	}
 
 	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-		fido_log_debug("%s: fcntl, F_SETFL", __func__);
+		fido_log_error(errno, "%s: fcntl F_SETFL", __func__);
 		return (-1);
 	}
 
@@ -355,7 +358,7 @@ disable_sigpipe(int fd)
 	int disabled = 1;
 
 	if (fcntl(fd, F_SETNOSIGPIPE, &disabled) == -1) {
-		fido_log_debug("%s: fcntl F_SETNOSIGPIPE", __func__);
+		fido_log_error(errno, "%s: fcntl F_SETNOSIGPIPE", __func__);
 		return (-1);
 	}
 
@@ -380,7 +383,7 @@ fido_hid_open(const char *path)
 	ctx->report_pipe[1] = -1;
 
 	if (pipe(ctx->report_pipe) == -1) {
-		fido_log_debug("%s: pipe", __func__);
+		fido_log_error(errno, "%s: pipe", __func__);
 		goto fail;
 	}
 
@@ -486,6 +489,15 @@ fido_hid_close(void *handle)
 }
 
 int
+fido_hid_set_sigmask(void *handle, const fido_sigset_t *sigmask)
+{
+	(void)handle;
+	(void)sigmask;
+
+	return (FIDO_ERR_INTERNAL);
+}
+
+int
 fido_hid_read(void *handle, unsigned char *buf, size_t len, int ms)
 {
 	struct hid_osx		*ctx = handle;
@@ -510,8 +522,13 @@ fido_hid_read(void *handle, unsigned char *buf, size_t len, int ms)
 	IOHIDDeviceUnscheduleFromRunLoop(ctx->ref, CFRunLoopGetCurrent(),
 	    ctx->loop_id);
 
-	if ((r = read(ctx->report_pipe[0], buf, len)) < 0 || (size_t)r != len) {
-		fido_log_debug("%s: read", __func__);
+	if ((r = read(ctx->report_pipe[0], buf, len)) == -1) {
+		fido_log_error(errno, "%s: read", __func__);
+		return (-1);
+	}
+
+	if (r < 0 || (size_t)r != len) {
+		fido_log_debug("%s: %zd != %zu", __func__, r, len);
 		return (-1);
 	}
 

@@ -9,7 +9,7 @@
 #include <dev/usb/usb_ioctl.h>
 #include <dev/usb/usbhid.h>
 
-#include <string.h>
+#include <errno.h>
 #include <unistd.h>
 
 #include "fido.h"
@@ -17,9 +17,11 @@
 #define MAX_UHID	64
 
 struct hid_freebsd {
-	int	fd;
-	size_t	report_in_len;
-	size_t	report_out_len;
+	int             fd;
+	size_t          report_in_len;
+	size_t          report_out_len;
+	sigset_t        sigmask;
+	const sigset_t *sigmaskp;
 };
 
 static bool
@@ -36,13 +38,12 @@ is_fido(int fd)
 	ugd.ugd_data = buf;
 	ugd.ugd_maxlen = sizeof(buf);
 
-	if (ioctl(fd, USB_GET_REPORT_DESC, &ugd) == -1) {
-		fido_log_debug("%s: ioctl", __func__);
+	if (ioctl(fd, IOCTL_REQ(USB_GET_REPORT_DESC), &ugd) == -1) {
+		fido_log_error(errno, "%s: ioctl", __func__);
 		return (false);
 	}
-
-	if (ugd.ugd_actlen > sizeof(buf) ||
-	    fido_hid_get_usage(ugd.ugd_data, ugd.ugd_actlen, &usage_page) < 0) {
+	if (ugd.ugd_actlen > sizeof(buf) || fido_hid_get_usage(ugd.ugd_data,
+	    ugd.ugd_actlen, &usage_page) < 0) {
 		fido_log_debug("%s: fido_hid_get_usage", __func__);
 		return (false);
 	}
@@ -63,7 +64,8 @@ copy_info(fido_dev_info_t *di, const char *path)
 	if ((fd = fido_hid_unix_open(path)) == -1 || is_fido(fd) == 0)
 		goto fail;
 
-	if (ioctl(fd, USB_GET_DEVICEINFO, &udi) == -1) {
+	if (ioctl(fd, IOCTL_REQ(USB_GET_DEVICEINFO), &udi) == -1) {
+		fido_log_error(errno, "%s: ioctl", __func__);
 		strlcpy(udi.udi_vendor, "FreeBSD", sizeof(udi.udi_vendor));
 		strlcpy(udi.udi_product, "uhid(4)", sizeof(udi.udi_product));
 		udi.udi_vendorNo = 0x0b5d; /* stolen from PCI_VENDOR_OPENBSD */
@@ -128,6 +130,7 @@ fido_hid_open(const char *path)
 	char				 buf[64];
 	struct hid_freebsd		*ctx;
 	struct usb_gen_descriptor	 ugd;
+	int				 r;
 
 	memset(&buf, 0, sizeof(buf));
 	memset(&ugd, 0, sizeof(ugd));
@@ -144,10 +147,12 @@ fido_hid_open(const char *path)
 	ugd.ugd_data = buf;
 	ugd.ugd_maxlen = sizeof(buf);
 
-	if (ioctl(ctx->fd, USB_GET_REPORT_DESC, &ugd) == -1 ||
+	if ((r = ioctl(ctx->fd, IOCTL_REQ(USB_GET_REPORT_DESC), &ugd) == -1) ||
 	    ugd.ugd_actlen > sizeof(buf) ||
 	    fido_hid_get_report_len(ugd.ugd_data, ugd.ugd_actlen,
 	    &ctx->report_in_len, &ctx->report_out_len) < 0) {
+		if (r == -1)
+			fido_log_error(errno, "%s: ioctl", __func__);
 		fido_log_debug("%s: using default report sizes", __func__);
 		ctx->report_in_len = CTAP_MAX_REPORT_LEN;
 		ctx->report_out_len = CTAP_MAX_REPORT_LEN;
@@ -161,8 +166,21 @@ fido_hid_close(void *handle)
 {
 	struct hid_freebsd *ctx = handle;
 
-	close(ctx->fd);
+	if (close(ctx->fd) == -1)
+		fido_log_error(errno, "%s: close", __func__);
+
 	free(ctx);
+}
+
+int
+fido_hid_set_sigmask(void *handle, const fido_sigset_t *sigmask)
+{
+	struct hid_freebsd *ctx = handle;
+
+	ctx->sigmask = *sigmask;
+	ctx->sigmaskp = &ctx->sigmask;
+
+	return (FIDO_OK);
 }
 
 int
@@ -176,13 +194,18 @@ fido_hid_read(void *handle, unsigned char *buf, size_t len, int ms)
 		return (-1);
 	}
 
-	if (fido_hid_unix_wait(ctx->fd, ms) < 0) {
+	if (fido_hid_unix_wait(ctx->fd, ms, ctx->sigmaskp) < 0) {
 		fido_log_debug("%s: fd not ready", __func__);
 		return (-1);
 	}
 
-	if ((r = read(ctx->fd, buf, len)) == -1 || (size_t)r != len) {
-		fido_log_debug("%s: read", __func__);
+	if ((r = read(ctx->fd, buf, len)) == -1) {
+		fido_log_error(errno, "%s: read", __func__);
+		return (-1);
+	}
+
+	if (r < 0 || (size_t)r != len) {
+		fido_log_debug("%s: %zd != %zu", __func__, r, len);
 		return (-1);
 	}
 
@@ -200,9 +223,13 @@ fido_hid_write(void *handle, const unsigned char *buf, size_t len)
 		return (-1);
 	}
 
-	if ((r = write(ctx->fd, buf + 1, len - 1)) == -1 ||
-	    (size_t)r != len - 1) {
-		fido_log_debug("%s: write", __func__);
+	if ((r = write(ctx->fd, buf + 1, len - 1)) == -1) {
+		fido_log_error(errno, "%s: write", __func__);
+		return (-1);
+	}
+
+	if (r < 0 || (size_t)r != len - 1) {
+		fido_log_debug("%s: %zd != %zu", __func__, r, len - 1);
 		return (-1);
 	}
 

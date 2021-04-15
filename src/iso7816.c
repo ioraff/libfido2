@@ -4,7 +4,6 @@
  * license that can be found in the LICENSE file.
  */
 
-#include <string.h>
 #include "fido.h"
 
 struct iso7816_apdu {
@@ -25,24 +24,23 @@ enum {
 };
 
 iso7816_apdu_t *
-iso7816_new(uint8_t ins, uint8_t p1, uint16_t payload_len)
+iso7816_new(uint8_t cla, uint8_t ins, uint8_t p1, uint16_t payload_len)
 {
-	iso7816_apdu_t	*apdu;
-	size_t		 max_len;
+	iso7816_apdu_t *apdu;
+	size_t max_len;
 
 	max_len = DATA + payload_len + 2; /* le1 le2 */
-
 	if ((apdu = calloc(1, sizeof(*apdu) + max_len)) == NULL)
-		return (NULL);
-
+		return NULL;
 	apdu->max_len = max_len;
+	apdu->buf[CLA] = cla;
 	apdu->buf[INS] = ins;
 	apdu->buf[P1] = p1;
 	apdu->buf[LC2] = (uint8_t)((payload_len >> 8) & 0xff);
 	apdu->buf[LC3] = (uint8_t)(payload_len & 0xff);
 	apdu->len = DATA;
 
-	return (apdu);
+	return apdu;
 }
 
 void
@@ -52,10 +50,7 @@ iso7816_free(iso7816_apdu_t **apdu_p)
 
 	if (apdu_p == NULL || (apdu = *apdu_p) == NULL)
 		return;
-
-	explicit_bzero(apdu, sizeof(*apdu) + apdu->max_len);
-	free(apdu);
-
+	freezero(apdu, sizeof(*apdu) + apdu->max_len);
 	*apdu_p = NULL;
 }
 
@@ -63,22 +58,21 @@ int
 iso7816_add(iso7816_apdu_t *apdu, const void *buf, size_t cnt)
 {
 	if (cnt > apdu->max_len - apdu->len)
-		return (-1);
-
+		return -1;
 	memcpy(apdu->buf + apdu->len, buf, cnt);
 	apdu->len += cnt;
 
-	return (0);
+	return 0;
 }
 
 const unsigned char *
 iso7816_ptr(const iso7816_apdu_t *apdu)
 {
-	return ((const unsigned char *)&apdu->buf);
+	return (const unsigned char *)&apdu->buf;
 }
 
 size_t
 iso7816_len(const iso7816_apdu_t *apdu)
 {
-	return (apdu->len);
+	return apdu->len;
 }

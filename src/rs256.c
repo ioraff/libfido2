@@ -6,7 +6,6 @@
 
 #include <bearssl.h>
 
-#include <string.h>
 #include "fido.h"
 #include "fido/rs256.h"
 
@@ -71,9 +70,7 @@ rs256_pk_free(rs256_pk_t **pkp)
 	if (pkp == NULL || (pk = *pkp) == NULL)
 		return;
 
-	explicit_bzero(pk, sizeof(*pk));
-	free(pk);
-
+	freezero(pk, sizeof(*pk));
 	*pkp = NULL;
 }
 

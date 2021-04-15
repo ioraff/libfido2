@@ -12,6 +12,8 @@ list(APPEND FIDO_SOURCES
 	blob.c
 	buf.c
 	cbor.c
+	compress.c
+	config.c
 	cred.c
 	credman.c
 	dev.c
@@ -23,6 +25,7 @@ list(APPEND FIDO_SOURCES
 	info.c
 	io.c
 	iso7816.c
+	largeblob.c
 	log.c
 	pin.c
 	random.c
@@ -35,6 +38,9 @@ if(FUZZ)
 	list(APPEND FIDO_SOURCES ../fuzz/prng.c)
 	list(APPEND FIDO_SOURCES ../fuzz/uniform_random.c)
 	list(APPEND FIDO_SOURCES ../fuzz/wrap.c)
+endif()
+if(NFC_LINUX)
+	list(APPEND FIDO_SOURCES netlink.c nfc_linux.c)
 endif()
 
 if(USE_HIDAPI)
@@ -62,8 +68,11 @@ endif()
 
 list(APPEND COMPAT_SOURCES
 	../openbsd-compat/bsd-getpagesize.c
+	../openbsd-compat/endian_win32.c
 	../openbsd-compat/explicit_bzero.c
 	../openbsd-compat/explicit_bzero_win32.c
+	../openbsd-compat/freezero.c
+	../openbsd-compat/hkdf.c
 	../openbsd-compat/recallocarray.c
 	../openbsd-compat/strlcat.c
 	../openbsd-compat/timingsafe_bcmp.c
@@ -73,7 +82,7 @@ list(APPEND COMPAT_SOURCES
 if(BUILD_STATIC_LIBS)
 	add_library(fido2 STATIC ${FIDO_SOURCES} ${COMPAT_SOURCES})
 	target_link_libraries(fido2 ${CBOR_LIBRARIES} ${BEARSSL_LIBRARIES}
-		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES})
+		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES} ${ZLIB_LIBRARIES})
 	if(WIN32)
 		if (MINGW)
 			target_link_libraries(fido2 wsock32 ws2_32 bcrypt setupapi hid)
@@ -93,7 +102,7 @@ endif()
 if(BUILD_SHARED_LIBS)
 	add_library(fido2_shared SHARED ${FIDO_SOURCES} ${COMPAT_SOURCES})
 	target_link_libraries(fido2_shared ${CBOR_LIBRARIES} ${BEARSSL_LIBRARIES}
-		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES})
+		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES} ${ZLIB_LIBRARIES})
 	if(WIN32)
 		if (MINGW)
 			target_link_libraries(fido2_shared wsock32 ws2_32 bcrypt

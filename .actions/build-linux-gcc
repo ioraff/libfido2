@@ -5,9 +5,11 @@ ${CC} --version
 # Build and install libfido2.
 mkdir build
 (cd build && cmake -DCMAKE_BUILD_TYPE=Debug ..)
-make -C build
+make -j"$(nproc)" -C build
 sudo make -C build install
 
 # Check udev/fidodevs.
-sudo update-alternatives --set awk "$(which original-awk)"
+[ -x "$(which update-alternatives)" ] && {
+	sudo update-alternatives --set awk "$(which original-awk)"
+}
 udev/check.sh udev/fidodevs

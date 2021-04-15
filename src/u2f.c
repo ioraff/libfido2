@@ -6,7 +6,6 @@
 
 #include <bearssl.h>
 
-#include <string.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -62,13 +61,8 @@ sig_get(fido_blob_t *sig, const unsigned char **buf, size_t *len)
 	if ((sig->ptr = calloc(1, sig->len)) == NULL ||
 	    fido_buf_read(buf, len, sig->ptr, sig->len) < 0) {
 		fido_log_debug("%s: fido_buf_read", __func__);
-		if (sig->ptr != NULL) {
-			explicit_bzero(sig->ptr, sig->len);
-			free(sig->ptr);
-			sig->ptr = NULL;
-			sig->len = 0;
-			return (-1);
-		}
+		fido_blob_reset(sig);
+		return (-1);
 	}
 
 	return (0);
@@ -179,7 +173,7 @@ send_dummy_register(fido_dev_t *dev, int ms)
 	memset(&challenge, 0xff, sizeof(challenge));
 	memset(&application, 0xff, sizeof(application));
 
-	if ((apdu = iso7816_new(U2F_CMD_REGISTER, 0, 2 *
+	if ((apdu = iso7816_new(0, U2F_CMD_REGISTER, 0, 2 *
 	    br_sha256_SIZE)) == NULL ||
 	    iso7816_add(apdu, &challenge, sizeof(challenge)) < 0 ||
 	    iso7816_add(apdu, &application, sizeof(application)) < 0) {
@@ -242,7 +236,7 @@ key_lookup(fido_dev_t *dev, const char *rp_id, const fido_blob_t *key_id,
 
 	key_id_len = (uint8_t)key_id->len;
 
-	if ((apdu = iso7816_new(U2F_CMD_AUTH, U2F_AUTH_CHECK, (uint16_t)(2 *
+	if ((apdu = iso7816_new(0, U2F_CMD_AUTH, U2F_AUTH_CHECK, (uint16_t)(2 *
 	    br_sha256_SIZE + sizeof(key_id_len) + key_id_len))) == NULL ||
 	    iso7816_add(apdu, &challenge, sizeof(challenge)) < 0 ||
 	    iso7816_add(apdu, &rp_id_hash, sizeof(rp_id_hash)) < 0 ||
@@ -348,7 +342,7 @@ do_auth(fido_dev_t *dev, const fido_blob_t *cdh, const char *rp_id,
 
 	key_id_len = (uint8_t)key_id->len;
 
-	if ((apdu = iso7816_new(U2F_CMD_AUTH, U2F_AUTH_SIGN, (uint16_t)(2 *
+	if ((apdu = iso7816_new(0, U2F_CMD_AUTH, U2F_AUTH_SIGN, (uint16_t)(2 *
 	    br_sha256_SIZE + sizeof(key_id_len) + key_id_len))) == NULL ||
 	    iso7816_add(apdu, cdh->ptr, cdh->len) < 0 ||
 	    iso7816_add(apdu, &rp_id_hash, sizeof(rp_id_hash)) < 0 ||
@@ -509,14 +503,8 @@ fail:
 	if (authdata_cbor)
 		cbor_decref(&authdata_cbor);
 
-	if (pk_blob.ptr) {
-		explicit_bzero(pk_blob.ptr, pk_blob.len);
-		free(pk_blob.ptr);
-	}
-	if (authdata_blob.ptr) {
-		explicit_bzero(authdata_blob.ptr, authdata_blob.len);
-		free(authdata_blob.ptr);
-	}
+	freezero(pk_blob.ptr, pk_blob.len);
+	freezero(authdata_blob.ptr, authdata_blob.len);
 
 	return (ok);
 }
@@ -587,22 +575,10 @@ parse_register_reply(fido_cred_t *cred, const unsigned char *reply, size_t len)
 
 	r = FIDO_OK;
 fail:
-	if (kh) {
-		explicit_bzero(kh, kh_len);
-		free(kh);
-	}
-	if (x5c.ptr) {
-		explicit_bzero(x5c.ptr, x5c.len);
-		free(x5c.ptr);
-	}
-	if (sig.ptr) {
-		explicit_bzero(sig.ptr, sig.len);
-		free(sig.ptr);
-	}
-	if (ad.ptr) {
-		explicit_bzero(ad.ptr, ad.len);
-		free(ad.ptr);
-	}
+	freezero(kh, kh_len);
+	freezero(x5c.ptr, x5c.len);
+	freezero(sig.ptr, sig.len);
+	freezero(ad.ptr, ad.len);
 
 	return (r);
 }
@@ -657,7 +633,7 @@ u2f_register(fido_dev_t *dev, fido_cred_t *cred, int ms)
 	br_sha256_update(&ctx, cred->rp.id, strlen(cred->rp.id));
 	br_sha256_out(&ctx, rp_id_hash);
 
-	if ((apdu = iso7816_new(U2F_CMD_REGISTER, 0, 2 *
+	if ((apdu = iso7816_new(0, U2F_CMD_REGISTER, 0, 2 *
 	    br_sha256_SIZE)) == NULL ||
 	    iso7816_add(apdu, cred->cdh.ptr, cred->cdh.len) < 0 ||
 	    iso7816_add(apdu, rp_id_hash, sizeof(rp_id_hash)) < 0) {
@@ -747,14 +723,8 @@ u2f_authenticate_single(fido_dev_t *dev, const fido_blob_t *key_id,
 
 	r = FIDO_OK;
 fail:
-	if (sig.ptr) {
-		explicit_bzero(sig.ptr, sig.len);
-		free(sig.ptr);
-	}
-	if (ad.ptr) {
-		explicit_bzero(ad.ptr, ad.len);
-		free(ad.ptr);
-	}
+	freezero(sig.ptr, sig.len);
+	freezero(ad.ptr, ad.len);
 
 	return (r);
 }
@@ -829,7 +799,7 @@ u2f_get_touch_begin(fido_dev_t *dev)
 	br_sha256_update(&ctx, rp_id, strlen(rp_id));
 	br_sha256_out(&ctx, rp_id_hash);
 
-	if ((apdu = iso7816_new(U2F_CMD_REGISTER, 0, 2 *
+	if ((apdu = iso7816_new(0, U2F_CMD_REGISTER, 0, 2 *
 	    br_sha256_SIZE)) == NULL ||
 	    iso7816_add(apdu, clientdata_hash, sizeof(clientdata_hash)) < 0 ||
 	    iso7816_add(apdu, rp_id_hash, sizeof(rp_id_hash)) < 0) {

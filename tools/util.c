@@ -423,20 +423,24 @@ print_cred(FILE *out_f, int type, const fido_cred_t *cred)
 
 	fprintf(out_f, "%s\n", id);
 
+	switch (type) {
 #if 0
-	if (type == COSE_ES256) {
+	case COSE_ES256:
 		write_ec_pubkey(out_f, fido_cred_pubkey_ptr(cred),
 		    fido_cred_pubkey_len(cred));
-	} else if (type == COSE_RS256) {
+		break;
+	case COSE_RS256:
 		write_rsa_pubkey(out_f, fido_cred_pubkey_ptr(cred),
 		    fido_cred_pubkey_len(cred));
-	} else if (type == COSE_EDDSA) {
+		break;
+	case COSE_EDDSA:
 		write_eddsa_pubkey(out_f, fido_cred_pubkey_ptr(cred),
 		    fido_cred_pubkey_len(cred));
-	} else {
+		break;
+#endif
+	default:
 		errx(1, "print_cred: unknown type");
 	}
-#endif
 
 	free(id);
 }

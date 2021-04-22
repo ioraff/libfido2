@@ -26,10 +26,10 @@ base64_encode(const void *ptr, size_t len, char **out)
 		return (-1);
 
 	for (i = 0; i < len; i += 3, dst += 4) {
-		x = src[i] << 16;
+		x = (unsigned long)src[i] << 16;
 		dst[3] = i + 2 >= len ? '=' : b64[(x |= src[i + 2]) & 0x3f];
 		dst[2] = i + 1 >= len ? '=' :
-		    b64[(x |= src[i + 1] << 8) >> 6 & 0x3f];
+		    b64[(x |= (unsigned long)src[i + 1] << 8) >> 6 & 0x3f];
 		dst[1] = b64[x >> 12 & 0x3f];
 		dst[0] = b64[x >> 18];
 	}
@@ -41,7 +41,7 @@ base64_encode(const void *ptr, size_t len, char **out)
 int
 base64_decode(const char *src, void **ptr, size_t *len)
 {
-	static const char b64[] = {
+	static const unsigned char b64[] = {
 		['A'] =  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,
 		        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
 		['a'] = 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
@@ -53,7 +53,8 @@ base64_decode(const char *src, void **ptr, size_t *len)
 	unsigned char	*dst;
 	size_t		 src_len, i;
 	unsigned long	 x;
-	int		 ok = -1, pad = 0, c;
+	unsigned	 pad = 0, c;
+	int		 ok = -1;
 
 	if (src == NULL || ptr == NULL || len == NULL)
 		return (-1);

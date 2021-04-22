@@ -1,0 +1,18 @@
+name: windows
+
+on:
+  pull_request:
+    branches:
+    - master
+  push:
+    branches:
+    - master
+    - '*-ci'
+
+jobs:
+  build:
+    runs-on: windows-2019
+    steps:
+    - uses: actions/checkout@v2
+    - name: build
+      run: .\windows\build.ps1

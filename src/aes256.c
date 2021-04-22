@@ -12,7 +12,10 @@ static int
 aes256_cbc(const fido_blob_t *key, const u_char *iv, const fido_blob_t *in,
     fido_blob_t *out, int encrypt)
 {
-	br_aes_ct64_cbcenc_keys ctx;
+	union {
+		br_aes_ct64_cbcenc_keys enc;
+		br_aes_ct64_cbcdec_keys dec;
+	} ctx;
 	u_char civ[16];
 	int ok = -1;
 
@@ -33,8 +36,13 @@ aes256_cbc(const fido_blob_t *key, const u_char *iv, const fido_blob_t *in,
 	}
 	memcpy(out->ptr, in->ptr, in->len);
 	memcpy(civ, iv, sizeof(civ));
-	br_aes_ct64_cbcenc_init(&ctx, key->ptr, key->len);
-	br_aes_ct64_cbcenc_run(&ctx, civ, out->ptr, out->len);
+	if (encrypt) {
+		br_aes_ct64_cbcenc_init(&ctx.enc, key->ptr, key->len);
+		br_aes_ct64_cbcenc_run(&ctx.enc, civ, out->ptr, out->len);
+	} else {
+		br_aes_ct64_cbcdec_init(&ctx.dec, key->ptr, key->len);
+		br_aes_ct64_cbcdec_run(&ctx.dec, civ, out->ptr, out->len);
+	}
 	explicit_bzero(&ctx, sizeof(ctx));
 
 	ok = 0;

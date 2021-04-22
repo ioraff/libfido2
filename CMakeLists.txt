@@ -158,16 +158,16 @@ if(UNIX)
 	add_definitions(-DHAVE_DEV_URANDOM)
 endif()
 
+find_package(ZLIB REQUIRED)
+
 if(MSVC)
 	if((NOT CBOR_INCLUDE_DIRS) OR (NOT CBOR_LIBRARY_DIRS) OR
-	   (NOT BEARSSL_INCLUDE_DIRS) OR (NOT BEARSSL_LIBRARY_DIRS) OR
-	   (NOT ZLIB_INCLUDE_DIRS) OR (NOT ZLIB_LIBRARY_DIRS))
+	   (NOT BEARSSL_INCLUDE_DIRS) OR (NOT BEARSSL_LIBRARY_DIRS))
 		message(FATAL_ERROR "please provide definitions for "
 		   "{CBOR,BEARSSL_{INCLUDE,LIBRARY}_DIRS when building "
 		    "under msvc")
 	endif()
 	set(CBOR_LIBRARIES cbor)
-	set(ZLIB_LIBRARIES zlib)
 	set(BEARSSL_LIBRARIES bearssl)
 	set(MSVC_DISABLED_WARNINGS_LIST
 		"C4200" # nonstandard extension used: zero-sized array in
@@ -191,16 +191,12 @@ else()
 	pkg_search_module(CBOR libcbor)
 	find_library(BEARSSL_LIBRARIES bearssl)
 	find_path(BEARSSL_INCLUDE_DIRS bearssl.h)
-	pkg_search_module(ZLIB zlib)
 
 	if(NOT CBOR_FOUND AND NOT HAVE_CBOR_H)
 		message(FATAL_ERROR "could not find libcbor")
 	endif()
 	if(NOT BEARSSL_LIBRARIES OR NOT BEARSSL_INCLUDE_DIRS)
 		message(FATAL_ERROR "could not find BearSSL")
-	endif()
-	if(NOT ZLIB_FOUND)
-		message(FATAL_ERROR "could not find zlib")
 	endif()
 
 	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -320,16 +316,14 @@ else()
 endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
-include_directories(SYSTEM ${CBOR_INCLUDE_DIRS} )
+include_directories(SYSTEM ${CBOR_INCLUDE_DIRS})
 include_directories(SYSTEM ${BEARSSL_INCLUDE_DIRS})
 include_directories(SYSTEM ${HIDAPI_INCLUDE_DIRS})
 include_directories(SYSTEM ${UDEV_INCLUDE_DIRS})
-include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
 
 link_directories(${CBOR_LIBRARY_DIRS})
 link_directories(${HIDAPI_LIBRARY_DIRS})
 link_directories(${UDEV_LIBRARY_DIRS})
-link_directories(${ZLIB_LIBRARY_DIRS})
 
 message(STATUS "BASE_LIBRARIES: ${BASE_LIBRARIES}")
 message(STATUS "BUILD_EXAMPLES: ${BUILD_EXAMPLES}")
@@ -353,8 +347,7 @@ message(STATUS "FIDO_VERSION: ${FIDO_VERSION}")
 message(STATUS "FUZZ: ${FUZZ}")
 message(STATUS "ZLIB_INCLUDE_DIRS: ${ZLIB_INCLUDE_DIRS}")
 message(STATUS "ZLIB_LIBRARIES: ${ZLIB_LIBRARIES}")
-message(STATUS "ZLIB_LIBRARY_DIRS: ${ZLIB_LIBRARY_DIRS}")
-message(STATUS "ZLIB_VERSION: ${ZLIB_VERSION}")
+message(STATUS "ZLIB_VERSION_STRING: ${ZLIB_VERSION_STRING}")
 if(USE_HIDAPI)
 	message(STATUS "HIDAPI_INCLUDE_DIRS: ${HIDAPI_INCLUDE_DIRS}")
 	message(STATUS "HIDAPI_LIBRARIES: ${HIDAPI_LIBRARIES}")

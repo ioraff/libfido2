@@ -101,7 +101,7 @@ endif()
 if(BUILD_SHARED_LIBS)
 	add_library(fido2_shared SHARED ${FIDO_SOURCES} ${COMPAT_SOURCES})
 	target_link_libraries(fido2_shared ${CBOR_LIBRARIES} ${BEARSSL_LIBRARIES}
-		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES} ${ZLIB_LIBRARIES})
+		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES} ZLIB::ZLIB)
 	if(WIN32)
 		if (MINGW)
 			target_link_libraries(fido2_shared wsock32 ws2_32 bcrypt

@@ -12,6 +12,8 @@ if(POLICY CMP0083)
   cmake_policy(SET CMP0083 NEW)
 endif()
 
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
 include(CheckCCompilerFlag)
 include(CheckFunctionExists)
 include(CheckLibraryExists)
@@ -79,7 +81,6 @@ endif()
 check_c_compiler_flag("-Wshorten-64-to-32" HAVE_SHORTEN_64_TO_32)
 check_c_compiler_flag("-fstack-protector-all" HAVE_STACK_PROTECTOR_ALL)
 
-check_include_files(cbor.h HAVE_CBOR_H)
 check_include_files(endian.h HAVE_ENDIAN_H)
 check_include_files(err.h HAVE_ERR_H)
 check_include_files(signal.h HAVE_SIGNAL_H)
@@ -116,7 +117,6 @@ try_compile(HAVE_POSIX_IOCTL
 
 list(APPEND CHECK_VARIABLES
 	HAVE_ARC4RANDOM_BUF
-	HAVE_CBOR_H
 	HAVE_CLOCK_GETTIME
 	HAVE_ENDIAN_H
 	HAVE_ERR_H
@@ -159,15 +159,14 @@ if(UNIX)
 endif()
 
 find_package(ZLIB REQUIRED)
+find_package(CBOR REQUIRED)
 
 if(MSVC)
-	if((NOT CBOR_INCLUDE_DIRS) OR (NOT CBOR_LIBRARY_DIRS) OR
-	   (NOT BEARSSL_INCLUDE_DIRS) OR (NOT BEARSSL_LIBRARY_DIRS))
+	if((NOT BEARSSL_INCLUDE_DIRS) OR (NOT BEARSSL_LIBRARY_DIRS))
 		message(FATAL_ERROR "please provide definitions for "
-		   "{CBOR,BEARSSL_{INCLUDE,LIBRARY}_DIRS when building "
+		   "BEARSSL_{INCLUDE,LIBRARY}_DIRS when building "
 		    "under msvc")
 	endif()
-	set(CBOR_LIBRARIES cbor)
 	set(BEARSSL_LIBRARIES bearssl)
 	set(MSVC_DISABLED_WARNINGS_LIST
 		"C4200" # nonstandard extension used: zero-sized array in
@@ -187,14 +186,9 @@ if(MSVC)
 	set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /Z7 /guard:cf /sdl /RTCcsu")
 	set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /Zi /guard:cf /sdl")
 else()
-	include(FindPkgConfig)
-	pkg_search_module(CBOR libcbor)
 	find_library(BEARSSL_LIBRARIES bearssl)
 	find_path(BEARSSL_INCLUDE_DIRS bearssl.h)
 
-	if(NOT CBOR_FOUND AND NOT HAVE_CBOR_H)
-		message(FATAL_ERROR "could not find libcbor")
-	endif()
 	if(NOT BEARSSL_LIBRARIES OR NOT BEARSSL_INCLUDE_DIRS)
 		message(FATAL_ERROR "could not find BearSSL")
 	endif()
@@ -316,12 +310,10 @@ else()
 endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
-include_directories(SYSTEM ${CBOR_INCLUDE_DIRS})
 include_directories(SYSTEM ${BEARSSL_INCLUDE_DIRS})
 include_directories(SYSTEM ${HIDAPI_INCLUDE_DIRS})
 include_directories(SYSTEM ${UDEV_INCLUDE_DIRS})
 
-link_directories(${CBOR_LIBRARY_DIRS})
 link_directories(${HIDAPI_LIBRARY_DIRS})
 link_directories(${UDEV_LIBRARY_DIRS})
 

@@ -82,7 +82,6 @@ check_c_compiler_flag("-fstack-protector-all" HAVE_STACK_PROTECTOR_ALL)
 check_include_files(cbor.h HAVE_CBOR_H)
 check_include_files(endian.h HAVE_ENDIAN_H)
 check_include_files(err.h HAVE_ERR_H)
-check_include_files(openssl/opensslv.h HAVE_OPENSSLV_H)
 check_include_files(signal.h HAVE_SIGNAL_H)
 check_include_files(sys/random.h HAVE_SYS_RANDOM_H)
 check_include_files(unistd.h HAVE_UNISTD_H)
@@ -127,7 +126,6 @@ list(APPEND CHECK_VARIABLES
 	HAVE_GETPAGESIZE
 	HAVE_GETRANDOM
 	HAVE_MEMSET_S
-	HAVE_OPENSSLV_H
 	HAVE_POSIX_IOCTL
 	HAVE_READPASSPHRASE
 	HAVE_RECALLOCARRAY

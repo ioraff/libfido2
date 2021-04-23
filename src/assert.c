@@ -417,6 +417,7 @@ fido_verify_sig_es256(const fido_blob_t *dgst, const es256_pk_t *pk,
 	q[0] = 4;
 	memcpy(q + 1, pk->x, 32);
 	memcpy(q + 1 + 32, pk->y, 32);
+	pkey.curve = BR_EC_secp256r1;
 	pkey.q = q;
 	pkey.qlen = 1 + 32 + 32;
 

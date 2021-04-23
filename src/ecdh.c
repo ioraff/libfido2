@@ -70,11 +70,10 @@ do_ecdh(const fido_dev_t *dev, const es256_sk_t *sk, const es256_pk_t *pk,
 {
 	const br_ec_impl *ec;
 	unsigned char q[65];
-	fido_blob_t *secret = NULL;
+	fido_blob_t secret;
 	int ok = -1;
 
-	if ((secret = fido_blob_new()) == NULL ||
-	    (*ecdh = fido_blob_new()) == NULL)
+	if ((*ecdh = fido_blob_new()) == NULL)
 		goto fail;
 
 	q[0] = 4;
@@ -87,9 +86,9 @@ do_ecdh(const fido_dev_t *dev, const es256_sk_t *sk, const es256_pk_t *pk,
 		fido_log_debug("%s: ECDH", __func__);
 		goto fail;
 	}
-	secret->ptr = q + ec->xoff(BR_EC_secp256r1, &secret->len);
+	secret.ptr = q + ec->xoff(BR_EC_secp256r1, &secret.len);
 
-	if (kdf(fido_dev_get_pin_protocol(dev), *ecdh, secret) < 0) {
+	if (kdf(fido_dev_get_pin_protocol(dev), *ecdh, &secret) < 0) {
 		fido_log_debug("%s: kdf", __func__);
 		goto fail;
 	}
@@ -99,8 +98,6 @@ fail:
 	explicit_bzero(q, sizeof(q));
 	if (ok < 0)
 		fido_blob_free(ecdh);
-
-	fido_blob_free(&secret);
 
 	return ok;
 }

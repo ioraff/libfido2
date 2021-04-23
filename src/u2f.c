@@ -44,6 +44,8 @@ sleep_msec(unsigned int msec)
 	Sleep(msec);
 
 	return (0);
+#elif defined(__MINGW32__)
+	return usleep(msec * 1000);
 #else
 	struct timespec ts = {
 		.tv_sec = (time_t)msec / 1000,

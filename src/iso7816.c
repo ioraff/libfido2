@@ -29,7 +29,7 @@ iso7816_new(uint8_t cla, uint8_t ins, uint8_t p1, uint16_t payload_len)
 	iso7816_apdu_t *apdu;
 	size_t max_len;
 
-	max_len = DATA + payload_len + 2; /* le1 le2 */
+	max_len = (size_t)DATA + payload_len + 2; /* le1 le2 */
 	if ((apdu = calloc(1, sizeof(*apdu) + max_len)) == NULL)
 		return NULL;
 	apdu->max_len = max_len;

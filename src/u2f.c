@@ -46,8 +46,8 @@ sleep_msec(unsigned int msec)
 	return (0);
 #else
 	struct timespec ts = {
-		.tv_sec = msec / 1000,
-		.tv_nsec = (msec % 1000) * 1000000,
+		.tv_sec = (time_t)msec / 1000,
+		.tv_nsec = ((long)msec % 1000) * 1000000,
 	};
 
 	return nanosleep(&ts, NULL);
@@ -94,7 +94,7 @@ x5c_get(fido_blob_t *x5c, const unsigned char **buf, size_t *len)
 			x5c->len = x5c->len << 8 | *seq++;
 		x5c->len += (size_t)(seq - *buf);
 	} else {
-		x5c->len = 2 + seq[1];
+		x5c->len = (size_t)(2 + seq[1]);
 	}
 
 	/* read accordingly */

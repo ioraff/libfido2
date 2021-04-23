@@ -20,6 +20,13 @@ jobs:
       run: |
         sudo apt -q update
         sudo apt install -q -y curl jq
+        # install bearssl
+        curl -O https://bearssl.org/bearssl-0.6.tar.gz
+        tar xzf bearssl-0.6.tar.gz
+        cd bearssl-0.6
+        make dll
+        sudo cp build/libbearssl.so /usr/local/lib
+        sudo cp inc/*.h /usr/local/include
     - name: build
       env:
         IMAGE: ${{ matrix.image }}

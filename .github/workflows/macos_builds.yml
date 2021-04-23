@@ -20,7 +20,15 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: dependencies
-      run: brew install libcbor llvm mandoc pkg-config zlib
+      run: |
+        brew install libcbor llvm mandoc pkg-config zlib
+        # install bearssl
+        curl -O https://bearssl.org/bearssl-0.6.tar.gz
+        tar xzf bearssl-0.6.tar.gz
+        cd bearssl-0.6
+        make
+        cp build/libbearssl.a /usr/local/lib
+        cp inc/*.h /usr/local/include
     - name: build
       env:
         CC: ${{ matrix.cc }}

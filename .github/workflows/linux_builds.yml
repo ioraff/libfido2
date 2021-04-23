@@ -40,11 +40,8 @@ jobs:
       env:
         CC: ${{ matrix.cc }}
       run: |
-        # ubuntu 16.04 does not package libcbor, and github actions's
-        # ubuntu 16.04 image comes with openssl 1.1.1 by default.
+        # ubuntu 16.04 does not package libcbor.
         if [ "$(lsb_release --short --release)" = "16.04" ]; then
-          sudo apt-get install -y --allow-downgrades \
-            openssl=1.0.2g-1ubuntu4.19 libssl-dev=1.0.2g-1ubuntu4.19
           sudo apt-add-repository ppa:yubico/stable
         fi
         sudo apt -q update
@@ -58,6 +55,13 @@ jobs:
         else
           sudo apt install -q -y "${CC}"
         fi
+        # install bearssl
+        curl -O https://bearssl.org/bearssl-0.6.tar.gz
+        tar xzf bearssl-0.6.tar.gz
+        cd bearssl-0.6
+        make dll
+        sudo cp build/libbearssl.so /usr/local/lib
+        sudo cp inc/*.h /usr/local/include
     - name: build
       env:
         CC: ${{ matrix.cc }}

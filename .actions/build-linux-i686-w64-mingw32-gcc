@@ -28,15 +28,14 @@ make -j"$(nproc)" -C build
 sudo make -C build install
 cd ..
 
-# Build and install OpenSSL 1.1.1k.
-git clone git://github.com/openssl/openssl
-cd openssl
-git checkout OpenSSL_1_1_1k
-./Configure mingw --prefix=/fakeroot --openssldir=/fakeroot/openssl \
-	--cross-compile-prefix=i686-w64-mingw32-
-make -j"$(nproc)"
-sudo make install_sw
-cd ..
+# Build and install bearssl.
+git clone -b v0.6 https://bearssl.org/git/BearSSL bearssl
+cd bearssl
+make dll CC=i686-w64-mingw32-gcc LDDLL=i686-w64-mingw32-gcc \
+	D=.dll LDDLLFLAGS='-shared -Wl,--out-implib,build/libbearssl.dll.a'
+sudo cp build/libbearssl.dll build/libbearssl.dll.a /fakeroot/lib
+sudo cp inc/*.h /fakeroot/include
+cd -
 
 # Build and install zlib.
 git clone https://github.com/madler/zlib

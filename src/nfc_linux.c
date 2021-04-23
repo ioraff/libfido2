@@ -36,7 +36,7 @@ struct nfc_linux {
 };
 
 static int
-tx_short_apdu(fido_dev_t *d, const iso7816_header_t *h, const uint8_t *payload,
+tx_short_apdu(fido_dev_t *d, const uint8_t *h, const uint8_t *payload,
     uint8_t payload_len, uint8_t cla_flags)
 {
 	uint8_t apdu[5 + UINT8_MAX + 1];
@@ -45,10 +45,10 @@ tx_short_apdu(fido_dev_t *d, const iso7816_header_t *h, const uint8_t *payload,
 	int ok = -1;
 
 	memset(&apdu, 0, sizeof(apdu));
-	apdu[0] = h->cla | cla_flags;
-	apdu[1] = h->ins;
-	apdu[2] = h->p1;
-	apdu[3] = h->p2;
+	apdu[0] = h[0] | cla_flags;
+	apdu[1] = h[1];
+	apdu[2] = h[2];
+	apdu[3] = h[3];
 	apdu[4] = payload_len;
 	memcpy(&apdu[5], payload, payload_len);
 	apdu_len = (size_t)(5 + payload_len + 1);
@@ -79,9 +79,9 @@ fail:
 static int
 nfc_do_tx(fido_dev_t *d, const uint8_t *apdu_ptr, size_t apdu_len)
 {
-	iso7816_header_t h;
+	uint8_t h[7];
 
-	if (fido_buf_read(&apdu_ptr, &apdu_len, &h, sizeof(h)) < 0) {
+	if (fido_buf_read(&apdu_ptr, &apdu_len, h, sizeof(h)) < 0) {
 		fido_log_debug("%s: header", __func__);
 		return (-1);
 	}
@@ -93,7 +93,7 @@ nfc_do_tx(fido_dev_t *d, const uint8_t *apdu_ptr, size_t apdu_len)
 	apdu_len -= 2; /* trim le1 le2 */
 
 	while (apdu_len > TX_CHUNK_SIZE) {
-		if (tx_short_apdu(d, &h, apdu_ptr, TX_CHUNK_SIZE, 0x10) < 0) {
+		if (tx_short_apdu(d, h, apdu_ptr, TX_CHUNK_SIZE, 0x10) < 0) {
 			fido_log_debug("%s: chain", __func__);
 			return (-1);
 		}
@@ -101,7 +101,7 @@ nfc_do_tx(fido_dev_t *d, const uint8_t *apdu_ptr, size_t apdu_len)
 		apdu_len -= TX_CHUNK_SIZE;
 	}
 
-	if (tx_short_apdu(d, &h, apdu_ptr, (uint8_t)apdu_len, 0) < 0) {
+	if (tx_short_apdu(d, h, apdu_ptr, (uint8_t)apdu_len, 0) < 0) {
 		fido_log_debug("%s: tx_short_apdu", __func__);
 		return (-1);
 	}

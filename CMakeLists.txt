@@ -160,14 +160,9 @@ endif()
 
 find_package(ZLIB REQUIRED)
 find_package(CBOR REQUIRED)
+find_package(BearSSL REQUIRED)
 
 if(MSVC)
-	if((NOT BEARSSL_INCLUDE_DIRS) OR (NOT BEARSSL_LIBRARY_DIRS))
-		message(FATAL_ERROR "please provide definitions for "
-		   "BEARSSL_{INCLUDE,LIBRARY}_DIRS when building "
-		    "under msvc")
-	endif()
-	set(BEARSSL_LIBRARIES bearssl)
 	set(MSVC_DISABLED_WARNINGS_LIST
 		"C4200" # nonstandard extension used: zero-sized array in
 			# struct/union;
@@ -186,13 +181,6 @@ if(MSVC)
 	set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /Z7 /guard:cf /sdl /RTCcsu")
 	set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /Zi /guard:cf /sdl")
 else()
-	find_library(BEARSSL_LIBRARIES bearssl)
-	find_path(BEARSSL_INCLUDE_DIRS bearssl.h)
-
-	if(NOT BEARSSL_LIBRARIES OR NOT BEARSSL_INCLUDE_DIRS)
-		message(FATAL_ERROR "could not find BearSSL")
-	endif()
-
 	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		# If using hidapi, use hidapi-hidraw.
 		set(HIDAPI_SUFFIX -hidraw)
@@ -310,7 +298,6 @@ else()
 endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
-include_directories(SYSTEM ${BEARSSL_INCLUDE_DIRS})
 include_directories(SYSTEM ${HIDAPI_INCLUDE_DIRS})
 include_directories(SYSTEM ${UDEV_INCLUDE_DIRS})
 

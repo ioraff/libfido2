@@ -80,7 +80,7 @@ list(APPEND COMPAT_SOURCES
 # static library
 if(BUILD_STATIC_LIBS)
 	add_library(fido2 STATIC ${FIDO_SOURCES} ${COMPAT_SOURCES})
-	target_link_libraries(fido2 CBOR::CBOR ${BEARSSL_LIBRARIES}
+	target_link_libraries(fido2 CBOR::CBOR BearSSL::BearSSL
 		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES} ZLIB::ZLIB)
 	if(WIN32)
 		if (MINGW)
@@ -100,7 +100,7 @@ endif()
 # dynamic library
 if(BUILD_SHARED_LIBS)
 	add_library(fido2_shared SHARED ${FIDO_SOURCES} ${COMPAT_SOURCES})
-	target_link_libraries(fido2_shared CBOR::CBOR ${BEARSSL_LIBRARIES}
+	target_link_libraries(fido2_shared CBOR::CBOR BearSSL::BearSSL
 		${UDEV_LIBRARIES} ${BASE_LIBRARIES} ${HIDAPI_LIBRARIES} ZLIB::ZLIB)
 	if(WIN32)
 		if (MINGW)

@@ -213,6 +213,8 @@ else()
 	endif()
 
 	if(NFC_LINUX)
+		pkg_search_module(UDEV libudev REQUIRED)
+		set(UDEV_NAME "udev")
 		add_definitions(-DNFC_LINUX)
 	endif()
 

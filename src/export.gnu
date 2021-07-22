@@ -26,6 +26,7 @@
 		fido_assert_rp_id;
 		fido_assert_set_authdata;
 		fido_assert_set_authdata_raw;
+		fido_assert_set_clientdata;
 		fido_assert_set_clientdata_hash;
 		fido_assert_set_count;
 		fido_assert_set_extensions;
@@ -73,6 +74,9 @@
 		fido_bio_template_set_name;
 		fido_cbor_info_aaguid_len;
 		fido_cbor_info_aaguid_ptr;
+		fido_cbor_info_algorithm_cose;
+		fido_cbor_info_algorithm_count;
+		fido_cbor_info_algorithm_type;
 		fido_cbor_info_extensions_len;
 		fido_cbor_info_extensions_ptr;
 		fido_cbor_info_free;
@@ -87,6 +91,8 @@
 		fido_cbor_info_options_value_ptr;
 		fido_cbor_info_protocols_len;
 		fido_cbor_info_protocols_ptr;
+		fido_cbor_info_transports_len;
+		fido_cbor_info_transports_ptr;
 		fido_cbor_info_versions_len;
 		fido_cbor_info_versions_ptr;
 		fido_cred_authdata_len;
@@ -126,6 +132,7 @@
 		fido_credman_rp_id_hash_ptr;
 		fido_credman_rp_name;
 		fido_credman_rp_new;
+		fido_credman_set_dev_rk;
 		fido_cred_new;
 		fido_cred_prot;
 		fido_cred_pubkey_len;
@@ -135,9 +142,11 @@
 		fido_cred_set_authdata;
 		fido_cred_set_authdata_raw;
 		fido_cred_set_blob;
+		fido_cred_set_clientdata;
 		fido_cred_set_clientdata_hash;
 		fido_cred_set_extensions;
 		fido_cred_set_fmt;
+		fido_cred_set_id;
 		fido_cred_set_options;
 		fido_cred_set_prot;
 		fido_cred_set_rk;
@@ -184,6 +193,7 @@
 		fido_dev_info_ptr;
 		fido_dev_info_vendor;
 		fido_dev_is_fido2;
+		fido_dev_is_winhello;
 		fido_dev_major;
 		fido_dev_make_cred;
 		fido_dev_minor;

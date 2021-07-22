@@ -110,11 +110,8 @@ x5c_get(fido_blob_t *x5c, const unsigned char **buf, size_t *len)
 fail:
 	explicit_bzero(&ctx, sizeof(ctx));
 
-	if (ok < 0) {
-		free(x5c->ptr);
-		x5c->ptr = NULL;
-		x5c->len = 0;
-	}
+	if (ok < 0)
+		fido_blob_reset(x5c);
 
 	return (ok);
 }
@@ -505,8 +502,8 @@ fail:
 	if (authdata_cbor)
 		cbor_decref(&authdata_cbor);
 
-	freezero(pk_blob.ptr, pk_blob.len);
-	freezero(authdata_blob.ptr, authdata_blob.len);
+	fido_blob_reset(&pk_blob);
+	fido_blob_reset(&authdata_blob);
 
 	return (ok);
 }
@@ -578,9 +575,9 @@ parse_register_reply(fido_cred_t *cred, const unsigned char *reply, size_t len)
 	r = FIDO_OK;
 fail:
 	freezero(kh, kh_len);
-	freezero(x5c.ptr, x5c.len);
-	freezero(sig.ptr, sig.len);
-	freezero(ad.ptr, ad.len);
+	fido_blob_reset(&x5c);
+	fido_blob_reset(&sig);
+	fido_blob_reset(&ad);
 
 	return (r);
 }
@@ -725,8 +722,8 @@ u2f_authenticate_single(fido_dev_t *dev, const fido_blob_t *key_id,
 
 	r = FIDO_OK;
 fail:
-	freezero(sig.ptr, sig.len);
-	freezero(ad.ptr, ad.len);
+	fido_blob_reset(&sig);
+	fido_blob_reset(&ad);
 
 	return (r);
 }

@@ -152,8 +152,8 @@ rx_preamble(fido_dev_t *d, uint8_t cmd, uint8_t *fp, int ms)
 #ifdef FIDO_FUZZ
 		cid = d->cid;
 #endif
-	} while (cid == d->cid &&
-	    fp[INIT_CMD] == (CTAP_FRAME_INIT | CTAP_KEEPALIVE));
+	} while (cid != d->cid || (cid == d->cid &&
+	    fp[INIT_CMD] == (CTAP_FRAME_INIT | CTAP_KEEPALIVE)));
 
 	if (d->rx_len > CTAP_MAX_REPORT_LEN)
 		return (-1);

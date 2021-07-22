@@ -46,6 +46,7 @@ fido_dev_make_cred_tx(fido_dev_t *dev, fido_cred_t *cred, const char *pin)
 {
 	fido_blob_t	 f;
 	fido_blob_t	*ecdh = NULL;
+	fido_opt_t	 uv = cred->uv;
 	es256_pk_t	*pk = NULL;
 	cbor_item_t	*argv[9];
 	const uint8_t	 cmd = CTAP_CBOR_MAKECRED;
@@ -87,17 +88,9 @@ fido_dev_make_cred_tx(fido_dev_t *dev, fido_cred_t *cred, const char *pin)
 			goto fail;
 		}
 
-	/* options */
-	if (cred->rk != FIDO_OPT_OMIT || cred->uv != FIDO_OPT_OMIT)
-		if ((argv[6] = cbor_encode_cred_opt(cred->rk,
-		    cred->uv)) == NULL) {
-			fido_log_debug("%s: cbor_encode_cred_opt", __func__);
-			r = FIDO_ERR_INTERNAL;
-			goto fail;
-		}
-
 	/* user verification */
-	if (fido_dev_can_get_uv_token(dev, pin, cred->uv)) {
+	if (pin != NULL || (uv == FIDO_OPT_TRUE &&
+	    fido_dev_supports_permissions(dev))) {
 		if ((r = fido_do_ecdh(dev, &pk, &ecdh)) != FIDO_OK) {
 			fido_log_debug("%s: fido_do_ecdh", __func__);
 			goto fail;
@@ -107,7 +100,16 @@ fido_dev_make_cred_tx(fido_dev_t *dev, fido_cred_t *cred, const char *pin)
 			fido_log_debug("%s: cbor_add_uv_params", __func__);
 			goto fail;
 		}
+		uv = FIDO_OPT_OMIT;
 	}
+
+	/* options */
+	if (cred->rk != FIDO_OPT_OMIT || uv != FIDO_OPT_OMIT)
+		if ((argv[6] = cbor_encode_cred_opt(cred->rk, uv)) == NULL) {
+			fido_log_debug("%s: cbor_encode_cred_opt", __func__);
+			r = FIDO_ERR_INTERNAL;
+			goto fail;
+		}
 
 	/* framing and transmission */
 	if (cbor_build_frame(cmd, argv, nitems(argv), &f) < 0 ||
@@ -149,8 +151,7 @@ fido_dev_make_cred_rx(fido_dev_t *dev, fido_cred_t *cred, int ms)
 	}
 
 	if (cred->fmt == NULL || fido_blob_is_empty(&cred->authdata_cbor) ||
-	    fido_blob_is_empty(&cred->attcred.id) ||
-	    fido_blob_is_empty(&cred->attstmt.sig)) {
+	    fido_blob_is_empty(&cred->attcred.id)) {
 		fido_cred_reset_rx(cred);
 		return (FIDO_ERR_INVALID_CBOR);
 	}
@@ -174,6 +175,10 @@ fido_dev_make_cred_wait(fido_dev_t *dev, fido_cred_t *cred, const char *pin,
 int
 fido_dev_make_cred(fido_dev_t *dev, fido_cred_t *cred, const char *pin)
 {
+#ifdef USE_WINHELLO
+	if (dev->flags & FIDO_DEV_WINHELLO)
+		return (fido_winhello_make_cred(dev, cred, pin));
+#endif
 	if (fido_dev_is_fido2(dev) == false) {
 		if (pin != NULL || cred->rk == FIDO_OPT_TRUE ||
 		    cred->ext.mask != 0)
@@ -322,7 +327,7 @@ fido_cred_verify(const fido_cred_t *cred)
 			r = FIDO_ERR_INTERNAL;
 			goto out;
 		}
-	} else {
+	} else if (!strcmp(cred->fmt, "fido-u2f")) {
 		if (get_signed_hash_u2f(&dgst, cred->authdata.rp_id_hash,
 		    sizeof(cred->authdata.rp_id_hash), &cred->cdh,
 		    &cred->attcred.id, &cred->attcred.pubkey.es256) < 0) {
@@ -330,6 +335,10 @@ fido_cred_verify(const fido_cred_t *cred)
 			r = FIDO_ERR_INTERNAL;
 			goto out;
 		}
+	} else {
+		fido_log_debug("%s: unknown fmt %s", __func__, cred->fmt);
+		r = FIDO_ERR_INVALID_ARGUMENT;
+		goto out;
 	}
 
 	if (verify_sig(&dgst, &cred->attstmt.x5c, &cred->attstmt.sig) < 0) {
@@ -397,7 +406,7 @@ fido_cred_verify_self(const fido_cred_t *cred)
 			r = FIDO_ERR_INTERNAL;
 			goto out;
 		}
-	} else {
+	} else if (!strcmp(cred->fmt, "fido-u2f")) {
 		if (get_signed_hash_u2f(&dgst, cred->authdata.rp_id_hash,
 		    sizeof(cred->authdata.rp_id_hash), &cred->cdh,
 		    &cred->attcred.id, &cred->attcred.pubkey.es256) < 0) {
@@ -405,6 +414,10 @@ fido_cred_verify_self(const fido_cred_t *cred)
 			r = FIDO_ERR_INTERNAL;
 			goto out;
 		}
+	} else {
+		fido_log_debug("%s: unknown fmt %s", __func__, cred->fmt);
+		r = FIDO_ERR_INVALID_ARGUMENT;
+		goto out;
 	}
 
 	switch (cred->attcred.type) {
@@ -447,13 +460,11 @@ fido_cred_new(void)
 static void
 fido_cred_clean_authdata(fido_cred_t *cred)
 {
-	free(cred->authdata_cbor.ptr);
-	free(cred->authdata_raw.ptr);
-	free(cred->attcred.id.ptr);
+	fido_blob_reset(&cred->authdata_cbor);
+	fido_blob_reset(&cred->authdata_raw);
+	fido_blob_reset(&cred->attcred.id);
 
 	memset(&cred->authdata_ext, 0, sizeof(cred->authdata_ext));
-	memset(&cred->authdata_cbor, 0, sizeof(cred->authdata_cbor));
-	memset(&cred->authdata_raw, 0, sizeof(cred->authdata_raw));
 	memset(&cred->authdata, 0, sizeof(cred->authdata));
 	memset(&cred->attcred, 0, sizeof(cred->attcred));
 }
@@ -461,43 +472,26 @@ fido_cred_clean_authdata(fido_cred_t *cred)
 void
 fido_cred_reset_tx(fido_cred_t *cred)
 {
-	free(cred->cdh.ptr);
+	fido_blob_reset(&cred->cd);
+	fido_blob_reset(&cred->cdh);
+	fido_blob_reset(&cred->user.id);
+	fido_blob_reset(&cred->blob);
+
 	free(cred->rp.id);
 	free(cred->rp.name);
-	free(cred->user.id.ptr);
 	free(cred->user.icon);
 	free(cred->user.name);
 	free(cred->user.display_name);
 	fido_free_blob_array(&cred->excl);
 
-	memset(&cred->cdh, 0, sizeof(cred->cdh));
 	memset(&cred->rp, 0, sizeof(cred->rp));
 	memset(&cred->user, 0, sizeof(cred->user));
 	memset(&cred->excl, 0, sizeof(cred->excl));
-
-	fido_blob_reset(&cred->blob);
-
 	memset(&cred->ext, 0, sizeof(cred->ext));
 
 	cred->type = 0;
 	cred->rk = FIDO_OPT_OMIT;
 	cred->uv = FIDO_OPT_OMIT;
-}
-
-static void
-fido_cred_clean_x509(fido_cred_t *cred)
-{
-	free(cred->attstmt.x5c.ptr);
-	cred->attstmt.x5c.ptr = NULL;
-	cred->attstmt.x5c.len = 0;
-}
-
-static void
-fido_cred_clean_sig(fido_cred_t *cred)
-{
-	free(cred->attstmt.sig.ptr);
-	cred->attstmt.sig.ptr = NULL;
-	cred->attstmt.sig.len = 0;
 }
 
 void
@@ -506,8 +500,8 @@ fido_cred_reset_rx(fido_cred_t *cred)
 	free(cred->fmt);
 	cred->fmt = NULL;
 	fido_cred_clean_authdata(cred);
-	fido_cred_clean_x509(cred);
-	fido_cred_clean_sig(cred);
+	fido_blob_reset(&cred->attstmt.x5c);
+	fido_blob_reset(&cred->attstmt.sig);
 	fido_blob_reset(&cred->largeblob_key);
 }
 
@@ -607,20 +601,19 @@ fail:
 }
 
 int
+fido_cred_set_id(fido_cred_t *cred, const unsigned char *ptr, size_t len)
+{
+	if (fido_blob_set(&cred->attcred.id, ptr, len) < 0)
+		return (FIDO_ERR_INVALID_ARGUMENT);
+
+	return (FIDO_OK);
+}
+
+int
 fido_cred_set_x509(fido_cred_t *cred, const unsigned char *ptr, size_t len)
 {
-	unsigned char *x509;
-
-	fido_cred_clean_x509(cred);
-
-	if (ptr == NULL || len == 0)
+	if (fido_blob_set(&cred->attstmt.x5c, ptr, len) < 0)
 		return (FIDO_ERR_INVALID_ARGUMENT);
-	if ((x509 = malloc(len)) == NULL)
-		return (FIDO_ERR_INTERNAL);
-
-	memcpy(x509, ptr, len);
-	cred->attstmt.x5c.ptr = x509;
-	cred->attstmt.x5c.len = len;
 
 	return (FIDO_OK);
 }
@@ -628,18 +621,8 @@ fido_cred_set_x509(fido_cred_t *cred, const unsigned char *ptr, size_t len)
 int
 fido_cred_set_sig(fido_cred_t *cred, const unsigned char *ptr, size_t len)
 {
-	unsigned char *sig;
-
-	fido_cred_clean_sig(cred);
-
-	if (ptr == NULL || len == 0)
+	if (fido_blob_set(&cred->attstmt.sig, ptr, len) < 0)
 		return (FIDO_ERR_INVALID_ARGUMENT);
-	if ((sig = malloc(len)) == NULL)
-		return (FIDO_ERR_INTERNAL);
-
-	memcpy(sig, ptr, len);
-	cred->attstmt.sig.ptr = sig;
-	cred->attstmt.sig.len = len;
 
 	return (FIDO_OK);
 }
@@ -673,10 +656,27 @@ fido_cred_exclude(fido_cred_t *cred, const unsigned char *id_ptr, size_t id_len)
 }
 
 int
+fido_cred_set_clientdata(fido_cred_t *cred, const unsigned char *data,
+    size_t data_len)
+{
+	if (!fido_blob_is_empty(&cred->cdh) ||
+	    fido_blob_set(&cred->cd, data, data_len) < 0) {
+		return (FIDO_ERR_INVALID_ARGUMENT);
+	}
+	if (fido_sha256(&cred->cdh, data, data_len) < 0) {
+		fido_blob_reset(&cred->cd);
+		return (FIDO_ERR_INTERNAL);
+	}
+
+	return (FIDO_OK);
+}
+
+int
 fido_cred_set_clientdata_hash(fido_cred_t *cred, const unsigned char *hash,
     size_t hash_len)
 {
-	if (fido_blob_set(&cred->cdh, hash, hash_len) < 0)
+	if (!fido_blob_is_empty(&cred->cd) ||
+	    fido_blob_set(&cred->cdh, hash, hash_len) < 0)
 		return (FIDO_ERR_INVALID_ARGUMENT);
 
 	return (FIDO_OK);
@@ -736,12 +736,8 @@ fido_cred_set_user(fido_cred_t *cred, const unsigned char *user_id,
 		up->icon = NULL;
 	}
 
-	if (user_id != NULL) {
-		if ((up->id.ptr = malloc(user_id_len)) == NULL)
-			goto fail;
-		memcpy(up->id.ptr, user_id, user_id_len);
-		up->id.len = user_id_len;
-	}
+	if (user_id != NULL && fido_blob_set(&up->id, user_id, user_id_len) < 0)
+		goto fail;
 	if (name != NULL && (up->name = strdup(name)) == NULL)
 		goto fail;
 	if (display_name != NULL &&
@@ -846,7 +842,8 @@ fido_cred_set_fmt(fido_cred_t *cred, const char *fmt)
 	if (fmt == NULL)
 		return (FIDO_ERR_INVALID_ARGUMENT);
 
-	if (strcmp(fmt, "packed") && strcmp(fmt, "fido-u2f"))
+	if (strcmp(fmt, "packed") && strcmp(fmt, "fido-u2f") &&
+	    strcmp(fmt, "none"))
 		return (FIDO_ERR_INVALID_ARGUMENT);
 
 	if ((cred->fmt = strdup(fmt)) == NULL)

@@ -2,7 +2,9 @@ param(
 	[string]$CMakePath = "C:\Program Files\CMake\bin\cmake.exe",
 	[string]$GitPath = "C:\Program Files\Git\bin\git.exe",
 	[string]$SevenZPath = "C:\Program Files\7-Zip\7z.exe",
-	[string]$VSWherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+	[string]$VSWherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe",
+	[string]$WinSDK = "",
+	[string]$Fido2Flags = ""
 )
 
 $ErrorView = "NormalView"
@@ -53,6 +55,13 @@ if([string]::IsNullOrEmpty($SevenZ)) {
 $VSWhere = $(Get-Command vswhere -ErrorAction Ignore | Select-Object -ExpandProperty Source)
 if([string]::IsNullOrEmpty($VSWhere)) {
 	$VSWhere = $VSWherePath
+}
+
+# Override CMAKE_SYSTEM_VERSION if $WinSDK is set.
+if(-Not ([string]::IsNullOrEmpty($WinSDK))) {
+	$CMAKE_SYSTEM_VERSION = "-DCMAKE_SYSTEM_VERSION='$WinSDK'"
+} else {
+	$CMAKE_SYSTEM_VERSION = ''
 }
 
 if(-Not (Test-Path $CMake)) {
@@ -149,7 +158,7 @@ Function Build(${OUTPUT}, ${GENERATOR}, ${ARCH}, ${SHARED}, ${FLAGS}) {
 	& $CMake ..\..\..\${LIBCBOR} -G "${GENERATOR}" -A "${ARCH}" `
 		-DBUILD_SHARED_LIBS="${SHARED}" `
 		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl" `
-		-DCMAKE_INSTALL_PREFIX="${OUTPUT}"
+		-DCMAKE_INSTALL_PREFIX="${OUTPUT}" "${CMAKE_SYSTEM_VERSION}"
 	& $CMake --build . --config Release --verbose
 	& $CMake --build . --config Release --target install --verbose
 	Pop-Location
@@ -162,7 +171,7 @@ Function Build(${OUTPUT}, ${GENERATOR}, ${ARCH}, ${SHARED}, ${FLAGS}) {
 	& $CMake ..\..\..\${ZLIB} -G "${GENERATOR}" -A "${ARCH}" `
 		-DBUILD_SHARED_LIBS="${SHARED}" `
 		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl" `
-		-DCMAKE_INSTALL_PREFIX="${OUTPUT}"
+		-DCMAKE_INSTALL_PREFIX="${OUTPUT}" "${CMAKE_SYSTEM_VERSION}"
 	& $CMake --build . --config Release --verbose
 	& $CMake --build . --config Release --target install --verbose
 	Pop-Location
@@ -170,8 +179,8 @@ Function Build(${OUTPUT}, ${GENERATOR}, ${ARCH}, ${SHARED}, ${FLAGS}) {
 	& $CMake ..\..\.. -G "${GENERATOR}" -A "${ARCH}" `
 		-DBUILD_SHARED_LIBS="${SHARED}" `
 		-DCMAKE_PREFIX_PATH="${OUTPUT}" `
-		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl /wd4244 /wd4267 /wd4702" `
-		-DCMAKE_INSTALL_PREFIX="${OUTPUT}"
+		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl /wd4244 /wd4267 /wd4702 ${Fido2Flags}" `
+		-DCMAKE_INSTALL_PREFIX="${OUTPUT}" "${CMAKE_SYSTEM_VERSION}"
 	& $CMake --build . --config Release --verbose
 	& $CMake --build . --config Release --target install --verbose
 }
@@ -187,12 +196,13 @@ Function Package-Dynamic(${SRC}, ${DEST}) {
 	Copy-Item "${SRC}\bin\zlib1.dll" "${DEST}" -ErrorAction Stop
 	Copy-Item "${SRC}\lib\zlib.lib" "${DEST}" -ErrorAction Stop
 	Copy-Item "${SRC}\lib\bearssls.lib" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}\lib\fido2.dll" "${DEST}" -ErrorAction Stop
+	Copy-Item "${SRC}\bin\fido2.dll" "${DEST}" -ErrorAction Stop
 	Copy-Item "${SRC}\lib\fido2.lib" "${DEST}" -ErrorAction Stop
 }
 
 Function Package-Static(${SRC}, ${DEST}) {
 	Copy-Item "${SRC}/lib/cbor.lib" "${DEST}" -ErrorAction Stop
+	Copy-Item "${SRC}/lib/zlib.lib" "${DEST}" -ErrorAction Stop
 	Copy-Item "${SRC}/lib/bearssls.lib" "${DEST}" -ErrorAction Stop
 	Copy-Item "${SRC}/lib/fido2_static.lib" "${DEST}/fido2.lib" `
 		-ErrorAction Stop

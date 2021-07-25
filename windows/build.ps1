@@ -176,10 +176,13 @@ Function Build(${OUTPUT}, ${GENERATOR}, ${ARCH}, ${SHARED}, ${FLAGS}) {
 	& $CMake --build . --config Release --target install --verbose
 	Pop-Location
 
+        # C6001 (use of uninitialized memory) gives false-positive
+        # for hash variable in assert.c:fido_verify_sig_rs256.
+	# Disable for now.
 	& $CMake ..\..\.. -G "${GENERATOR}" -A "${ARCH}" `
 		-DBUILD_SHARED_LIBS="${SHARED}" `
 		-DCMAKE_PREFIX_PATH="${OUTPUT}" `
-		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl /wd4244 /wd4267 /wd4702 ${Fido2Flags}" `
+		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl /wd4244 /wd4267 /wd4702 /wd6001 ${Fido2Flags}" `
 		-DCMAKE_INSTALL_PREFIX="${OUTPUT}" "${CMAKE_SYSTEM_VERSION}"
 	& $CMake --build . --config Release --verbose
 	& $CMake --build . --config Release --target install --verbose

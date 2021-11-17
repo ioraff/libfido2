@@ -4,6 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
 #include <cbor.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,6 +46,14 @@ WRAP(void *,
 	(size_t nmemb, size_t size),
 	NULL,
 	(nmemb, size),
+	1
+)
+
+WRAP(void *,
+	realloc,
+	(void *ptr, size_t size),
+	NULL,
+	(ptr, size),
 	1
 )
 
@@ -111,8 +122,24 @@ WRAP(cbor_item_t *,
 )
 
 WRAP(cbor_item_t *,
+	cbor_build_uint16,
+	(uint16_t value),
+	NULL,
+	(value),
+	1
+)
+
+WRAP(cbor_item_t *,
 	cbor_build_uint32,
 	(uint32_t value),
+	NULL,
+	(value),
+	1
+)
+
+WRAP(cbor_item_t *,
+	cbor_build_uint64,
+	(uint64_t value),
 	NULL,
 	(value),
 	1
@@ -166,6 +193,14 @@ WRAP(cbor_item_t *,
 	1
 )
 
+WRAP(cbor_item_t *,
+	cbor_new_definite_bytestring,
+	(void),
+	NULL,
+	(),
+	1
+)
+
 WRAP(size_t,
 	cbor_serialize_alloc,
 	(const cbor_item_t *item, cbor_mutable_data *buffer,
@@ -177,16 +212,16 @@ WRAP(size_t,
 
 WRAP(int,
 	fido_tx,
-	(fido_dev_t *d, uint8_t cmd, const void *buf, size_t count),
+	(fido_dev_t *d, uint8_t cmd, const void *buf, size_t count, int *ms),
 	-1,
-	(d, cmd, buf, count),
+	(d, cmd, buf, count, ms),
 	1
 )
 
 WRAP(int,
-	usleep,
-	(unsigned int usec),
+	bind,
+	(int sockfd, const struct sockaddr *addr, socklen_t addrlen),
 	-1,
-	(usec),
+	(sockfd, addr, addrlen),
 	1
 )

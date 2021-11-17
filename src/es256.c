@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Yubico AB. All rights reserved.
+ * Copyright (c) 2018-2021 Yubico AB. All rights reserved.
  * Use of this source code is governed by a BSD-style
  * license that can be found in the LICENSE file.
  */
@@ -259,5 +259,48 @@ es256_derive_pk(const es256_sk_t *sk, es256_pk_t *pk)
 fail:
 	explicit_bzero(kbuf, sizeof(kbuf));
 
+	return (ok);
+}
+
+int
+es256_verify_sig(const fido_blob_t *dgst, const br_ec_public_key *pkey,
+    const fido_blob_t *sig)
+{
+	int ok = -1;
+
+	if (br_ecdsa_vrfy_asn1_get_default()(br_ec_get_default(), dgst->ptr,
+	    dgst->len, pkey, sig->ptr, sig->len) == 0) {
+		fido_log_debug("%s: ECDSA verify", __func__);
+		goto fail;
+	}
+
+	ok = 0;
+fail:
+	return (ok);
+}
+
+int
+es256_pk_verify_sig(const fido_blob_t *dgst, const es256_pk_t *pk,
+    const fido_blob_t *sig)
+{
+	unsigned char		 q[BR_EC_KBUF_PUB_MAX_SIZE];
+	br_ec_public_key	 pkey;
+	int			 ok = -1;
+
+	/* BearSSL needs uncompressed format */
+	q[0] = 4;
+	memcpy(q + 1, pk->x, 32);
+	memcpy(q + 1 + 32, pk->y, 32);
+	pkey.curve = BR_EC_secp256r1;
+	pkey.q = q;
+	pkey.qlen = 1 + 32 + 32;
+
+	if (es256_verify_sig(dgst, &pkey, sig) < 0) {
+		fido_log_debug("%s: es256_verify_sig", __func__);
+		goto fail;
+	}
+
+	ok = 0;
+fail:
 	return (ok);
 }

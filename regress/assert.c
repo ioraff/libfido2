@@ -1,8 +1,10 @@
 /*
- * Copyright (c) 2018 Yubico AB. All rights reserved.
+ * Copyright (c) 2018-2021 Yubico AB. All rights reserved.
  * Use of this source code is governed by a BSD-style
  * license that can be found in the LICENSE file.
  */
+
+#define _FIDO_INTERNAL
 
 #include <assert.h>
 #include <fido.h>
@@ -397,7 +399,7 @@ junk_cdh(void)
 	junk = malloc(sizeof(cdh));
 	assert(junk != NULL);
 	memcpy(junk, cdh, sizeof(cdh));
-	junk[0] = ~junk[0];
+	junk[0] = (unsigned char)~junk[0];
 
 	a = alloc_assert();
 	pk = alloc_es256_pk();
@@ -448,7 +450,7 @@ junk_authdata(void)
 	junk = malloc(sizeof(authdata));
 	assert(junk != NULL);
 	memcpy(junk, authdata, sizeof(authdata));
-	junk[0] = ~junk[0];
+	junk[0] = (unsigned char)~junk[0];
 
 	a = alloc_assert();
 	assert(fido_assert_set_count(a, 1) == FIDO_OK);
@@ -468,7 +470,7 @@ junk_sig(void)
 	junk = malloc(sizeof(sig));
 	assert(junk != NULL);
 	memcpy(junk, sig, sizeof(sig));
-	junk[0] = ~junk[0];
+	junk[0] = (unsigned char)~junk[0];
 
 	a = alloc_assert();
 	pk = alloc_es256_pk();

@@ -78,7 +78,7 @@ parse_assert_reply(const cbor_item_t *key, const cbor_item_t *val, void *arg)
 
 static int
 fido_dev_get_assert_tx(fido_dev_t *dev, fido_assert_t *assert,
-    const es256_pk_t *pk, const fido_blob_t *ecdh, const char *pin)
+    const es256_pk_t *pk, const fido_blob_t *ecdh, const char *pin, int *ms)
 {
 	fido_blob_t	 f;
 	fido_opt_t	 uv = assert->uv;
@@ -126,7 +126,7 @@ fido_dev_get_assert_tx(fido_dev_t *dev, fido_assert_t *assert,
 	if (pin != NULL || (uv == FIDO_OPT_TRUE &&
 	    fido_dev_supports_permissions(dev))) {
 		if ((r = cbor_add_uv_params(dev, cmd, &assert->cdh, pk, ecdh,
-		    pin, assert->rp_id, &argv[5], &argv[6])) != FIDO_OK) {
+		    pin, assert->rp_id, &argv[5], &argv[6], ms)) != FIDO_OK) {
 			fido_log_debug("%s: cbor_add_uv_params", __func__);
 			goto fail;
 		}
@@ -143,7 +143,7 @@ fido_dev_get_assert_tx(fido_dev_t *dev, fido_assert_t *assert,
 
 	/* frame and transmit */
 	if (cbor_build_frame(cmd, argv, nitems(argv), &f) < 0 ||
-	    fido_tx(dev, CTAP_CMD_CBOR, f.ptr, f.len) < 0) {
+	    fido_tx(dev, CTAP_CMD_CBOR, f.ptr, f.len, ms) < 0) {
 		fido_log_debug("%s: fido_tx", __func__);
 		r = FIDO_ERR_TX;
 		goto fail;
@@ -158,7 +158,7 @@ fail:
 }
 
 static int
-fido_dev_get_assert_rx(fido_dev_t *dev, fido_assert_t *assert, int ms)
+fido_dev_get_assert_rx(fido_dev_t *dev, fido_assert_t *assert, int *ms)
 {
 	unsigned char	reply[FIDO_MAXMSG];
 	int		reply_len;
@@ -199,11 +199,11 @@ fido_dev_get_assert_rx(fido_dev_t *dev, fido_assert_t *assert, int ms)
 }
 
 static int
-fido_get_next_assert_tx(fido_dev_t *dev)
+fido_get_next_assert_tx(fido_dev_t *dev, int *ms)
 {
 	const unsigned char cbor[] = { CTAP_CBOR_NEXT_ASSERT };
 
-	if (fido_tx(dev, CTAP_CMD_CBOR, cbor, sizeof(cbor)) < 0) {
+	if (fido_tx(dev, CTAP_CMD_CBOR, cbor, sizeof(cbor), ms) < 0) {
 		fido_log_debug("%s: fido_tx", __func__);
 		return (FIDO_ERR_TX);
 	}
@@ -212,7 +212,7 @@ fido_get_next_assert_tx(fido_dev_t *dev)
 }
 
 static int
-fido_get_next_assert_rx(fido_dev_t *dev, fido_assert_t *assert, int ms)
+fido_get_next_assert_rx(fido_dev_t *dev, fido_assert_t *assert, int *ms)
 {
 	unsigned char	reply[FIDO_MAXMSG];
 	int		reply_len;
@@ -242,16 +242,17 @@ fido_get_next_assert_rx(fido_dev_t *dev, fido_assert_t *assert, int ms)
 
 static int
 fido_dev_get_assert_wait(fido_dev_t *dev, fido_assert_t *assert,
-    const es256_pk_t *pk, const fido_blob_t *ecdh, const char *pin, int ms)
+    const es256_pk_t *pk, const fido_blob_t *ecdh, const char *pin, int *ms)
 {
 	int r;
 
-	if ((r = fido_dev_get_assert_tx(dev, assert, pk, ecdh, pin)) != FIDO_OK ||
+	if ((r = fido_dev_get_assert_tx(dev, assert, pk, ecdh, pin,
+	    ms)) != FIDO_OK ||
 	    (r = fido_dev_get_assert_rx(dev, assert, ms)) != FIDO_OK)
 		return (r);
 
 	while (assert->stmt_len < assert->stmt_cnt) {
-		if ((r = fido_get_next_assert_tx(dev)) != FIDO_OK ||
+		if ((r = fido_get_next_assert_tx(dev, ms)) != FIDO_OK ||
 		    (r = fido_get_next_assert_rx(dev, assert, ms)) != FIDO_OK)
 			return (r);
 		assert->stmt_len++;
@@ -285,11 +286,12 @@ fido_dev_get_assert(fido_dev_t *dev, fido_assert_t *assert, const char *pin)
 {
 	fido_blob_t	*ecdh = NULL;
 	es256_pk_t	*pk = NULL;
+	int		 ms = dev->timeout_ms;
 	int		 r;
 
 #ifdef USE_WINHELLO
 	if (dev->flags & FIDO_DEV_WINHELLO)
-		return (fido_winhello_get_assert(dev, assert, pin));
+		return (fido_winhello_get_assert(dev, assert, pin, ms));
 #endif
 
 	if (assert->rp_id == NULL || assert->cdh.ptr == NULL) {
@@ -301,19 +303,19 @@ fido_dev_get_assert(fido_dev_t *dev, fido_assert_t *assert, const char *pin)
 	if (fido_dev_is_fido2(dev) == false) {
 		if (pin != NULL || assert->ext.mask != 0)
 			return (FIDO_ERR_UNSUPPORTED_OPTION);
-		return (u2f_authenticate(dev, assert, -1));
+		return (u2f_authenticate(dev, assert, &ms));
 	}
 
 	if (pin != NULL || (assert->uv == FIDO_OPT_TRUE &&
 	    fido_dev_supports_permissions(dev)) ||
 	    (assert->ext.mask & FIDO_EXT_HMAC_SECRET)) {
-		if ((r = fido_do_ecdh(dev, &pk, &ecdh)) != FIDO_OK) {
+		if ((r = fido_do_ecdh(dev, &pk, &ecdh, &ms)) != FIDO_OK) {
 			fido_log_debug("%s: fido_do_ecdh", __func__);
 			goto fail;
 		}
 	}
 
-	r = fido_dev_get_assert_wait(dev, assert, pk, ecdh, pin, -1);
+	r = fido_dev_get_assert_wait(dev, assert, pk, ecdh, pin, &ms);
 	if (r == FIDO_OK && (assert->ext.mask & FIDO_EXT_HMAC_SECRET))
 		if (decrypt_hmac_secrets(dev, assert, ecdh) < 0) {
 			fido_log_debug("%s: decrypt_hmac_secrets", __func__);
@@ -415,83 +417,6 @@ fail:
 }
 
 int
-fido_verify_sig_es256(const fido_blob_t *dgst, const es256_pk_t *pk,
-    const fido_blob_t *sig)
-{
-	unsigned char		 q[BR_EC_KBUF_PUB_MAX_SIZE];
-	br_ec_public_key	 pkey;
-	int			 ok = -1;
-
-	/* BearSSL needs uncompressed format */
-	q[0] = 4;
-	memcpy(q + 1, pk->x, 32);
-	memcpy(q + 1 + 32, pk->y, 32);
-	pkey.curve = BR_EC_secp256r1;
-	pkey.q = q;
-	pkey.qlen = 1 + 32 + 32;
-
-	if (br_ecdsa_vrfy_asn1_get_default()(br_ec_get_default(), dgst->ptr,
-	    dgst->len, &pkey, sig->ptr, sig->len) == 0) {
-		fido_log_debug("%s: ECDSA verify", __func__);
-		goto fail;
-	}
-
-	ok = 0;
-fail:
-	return (ok);
-}
-
-int
-fido_verify_sig_rs256(const fido_blob_t *dgst, const rs256_pk_t *pk,
-    const fido_blob_t *sig)
-{
-	br_rsa_public_key	pkey;
-	unsigned char		hash[br_sha256_SIZE];
-	int			ok = -1;
-
-	/* RSA verify needs SHA256-sized hash */
-	if (dgst->len != br_sha256_SIZE) {
-		fido_log_debug("%s: dgst->len=%zu", __func__, dgst->len);
-		return (-1);
-	}
-
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#endif
-	pkey.n = (unsigned char *)pk->n;
-	pkey.nlen = sizeof(pk->n);
-	pkey.e = (unsigned char *)pk->e;
-	pkey.elen = sizeof(pk->e);
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-
-	if (br_rsa_pkcs1_vrfy_get_default()(sig->ptr, sig->len,
-	    BR_HASH_OID_SHA256, dgst->len, &pkey, hash) != 1 ||
-	    memcmp(dgst->ptr, hash, sizeof(hash)) != 0) {
-		fido_log_debug("%s: RSA_verify", __func__);
-		goto fail;
-	}
-
-	ok = 0;
-fail:
-	return (ok);
-}
-
-int
-fido_verify_sig_eddsa(const fido_blob_t *dgst, const eddsa_pk_t *pk,
-    const fido_blob_t *sig)
-{
-	(void)dgst;
-	(void)pk;
-	(void)sig;
-
-	fido_log_debug("%s: EdDSA not implemented", __func__);
-	return (-1);
-}
-
-int
 fido_assert_verify(const fido_assert_t *assert, size_t idx, int cose_alg,
     const void *pk)
 {
@@ -549,13 +474,13 @@ fido_assert_verify(const fido_assert_t *assert, size_t idx, int cose_alg,
 
 	switch (cose_alg) {
 	case COSE_ES256:
-		ok = fido_verify_sig_es256(&dgst, pk, &stmt->sig);
+		ok = es256_pk_verify_sig(&dgst, pk, &stmt->sig);
 		break;
 	case COSE_RS256:
-		ok = fido_verify_sig_rs256(&dgst, pk, &stmt->sig);
+		ok = rs256_pk_verify_sig(&dgst, pk, &stmt->sig);
 		break;
 	case COSE_EDDSA:
-		ok = fido_verify_sig_eddsa(&dgst, pk, &stmt->sig);
+		ok = eddsa_pk_verify_sig(&dgst, pk, &stmt->sig);
 		break;
 	default:
 		fido_log_debug("%s: unsupported cose_alg %d", __func__,

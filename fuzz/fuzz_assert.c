@@ -255,6 +255,7 @@ verify_assert(int type, const unsigned char *cdh_ptr, size_t cdh_len,
     int ext, void *pk)
 {
 	fido_assert_t *assert = NULL;
+	int r;
 
 	if ((assert = fido_assert_new()) == NULL)
 		return;
@@ -285,7 +286,8 @@ verify_assert(int type, const unsigned char *cdh_ptr, size_t cdh_len,
 	}
 	fido_assert_set_sig(assert, 0, sig_ptr, sig_len);
 
-	assert(fido_assert_verify(assert, 0, type, pk) != FIDO_OK);
+	r = fido_assert_verify(assert, 0, type, pk);
+	consume(&r, sizeof(r));
 
 	fido_assert_free(&assert);
 }
@@ -303,6 +305,7 @@ test(const struct param *p)
 	void *pk;
 
 	prng_init((unsigned int)p->seed);
+	fuzz_clock_reset();
 	fido_init(FIDO_DEBUG);
 	fido_set_log_handler(consume_str);
 

@@ -138,8 +138,8 @@ copy_info(fido_dev_info_t *di, const char *name)
 	}
 #endif
 
-	di->manufacturer = strdup("unknown");
-	di->product = strdup("unknown");
+	di->manufacturer = strdup("");
+	di->product = strdup("");
 
 	if (di->path == NULL || di->manufacturer == NULL || di->product == NULL)
 		goto fail;

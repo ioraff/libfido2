@@ -1,85 +1,90 @@
+# Copyright (c) 2021 Yubico AB. All rights reserved.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
 param(
 	[string]$CMakePath = "C:\Program Files\CMake\bin\cmake.exe",
 	[string]$GitPath = "C:\Program Files\Git\bin\git.exe",
 	[string]$SevenZPath = "C:\Program Files\7-Zip\7z.exe",
 	[string]$VSWherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe",
 	[string]$WinSDK = "",
+	[string]$Config = "Release",
+	[string]$Arch = "x64",
+	[string]$Type = "dynamic",
 	[string]$Fido2Flags = ""
 )
 
 $ErrorView = "NormalView"
-$ErrorActionPreference = "Continue"
-
+$ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# BearSSL coordinates.
-New-Variable -Name 'BEARSSL_URL' `
-	-Value 'https://bearssl.org' -Option Constant
-New-Variable -Name 'BEARSSL' -Value 'bearssl-0.6' -Option Constant
+. "$PSScriptRoot\const.ps1"
 
-# libcbor coordinates.
-New-Variable -Name 'LIBCBOR' -Value 'libcbor-0.8.0' -Option Constant
-New-Variable -Name 'LIBCBOR_BRANCH' -Value 'v0.8.0' -Option Constant
-New-Variable -Name 'LIBCBOR_GIT' -Value 'https://github.com/pjk/libcbor' `
-	-Option Constant
+Function ExitOnError() {
+	if ($LastExitCode -ne 0) {
+		throw "A command exited with status $LastExitCode"
+	}
+}
 
-# zlib coordinates.
-New-Variable -Name 'ZLIB' -Value 'zlib-1.2.11' -Option Constant
-New-Variable -Name 'ZLIB_BRANCH' -Value 'v1.2.11' -Option Constant
-New-Variable -Name 'ZLIB_GIT' -Value 'https://github.com/madler/zlib' `
-	-Option Constant
-
-# Work directories.
-New-Variable -Name 'BUILD' -Value "$PSScriptRoot\..\build" -Option Constant
-New-Variable -Name 'OUTPUT' -Value "$PSScriptRoot\..\output" -Option Constant
-
-# Find CMake.
-$CMake = $(Get-Command cmake -ErrorAction Ignore | Select-Object -ExpandProperty Source)
-if([string]::IsNullOrEmpty($CMake)) {
-	$CMake = $CMakePath
+Function GitClone(${REPO}, ${BRANCH}, ${DIR}) {
+	Write-Host "Cloning ${REPO}..."
+	& $Git -c advice.detachedHead=false clone --quiet --depth=1 `
+	    --branch "${BRANCH}" "${REPO}" "${DIR}"
+	Write-Host "${REPO}'s ${BRANCH} HEAD is:"
+	& $Git -C "${DIR}" show -s HEAD
 }
 
 # Find Git.
-$Git = $(Get-Command git -ErrorAction Ignore | Select-Object -ExpandProperty Source)
-if([string]::IsNullOrEmpty($Git)) {
+$Git = $(Get-Command git -ErrorAction Ignore | `
+    Select-Object -ExpandProperty Source)
+if ([string]::IsNullOrEmpty($Git)) {
 	$Git = $GitPath
+}
+if (-Not (Test-Path $Git)) {
+	throw "Unable to find Git at $Git"
+}
+
+# Find CMake.
+$CMake = $(Get-Command cmake -ErrorAction Ignore | `
+    Select-Object -ExpandProperty Source)
+if ([string]::IsNullOrEmpty($CMake)) {
+	$CMake = $CMakePath
+}
+if (-Not (Test-Path $CMake)) {
+	throw "Unable to find CMake at $CMake"
 }
 
 # Find 7z.
-$SevenZ = $(Get-Command 7z -ErrorAction Ignore | Select-Object -ExpandProperty Source)
-if([string]::IsNullOrEmpty($SevenZ)) {
+$SevenZ = $(Get-Command 7z -ErrorAction Ignore | `
+    Select-Object -ExpandProperty Source)
+if ([string]::IsNullOrEmpty($SevenZ)) {
 	$SevenZ = $SevenZPath
+}
+if (-Not (Test-Path $SevenZ)) {
+	throw "Unable to find 7z at $SevenZ"
 }
 
 # Find VSWhere.
-$VSWhere = $(Get-Command vswhere -ErrorAction Ignore | Select-Object -ExpandProperty Source)
-if([string]::IsNullOrEmpty($VSWhere)) {
+$VSWhere = $(Get-Command vswhere -ErrorAction Ignore | `
+    Select-Object -ExpandProperty Source)
+if ([string]::IsNullOrEmpty($VSWhere)) {
 	$VSWhere = $VSWherePath
+}
+if (-Not (Test-Path $VSWhere)) {
+	throw "Unable to find VSWhere at $VSWhere"
 }
 
 # Override CMAKE_SYSTEM_VERSION if $WinSDK is set.
-if(-Not ([string]::IsNullOrEmpty($WinSDK))) {
+if (-Not ([string]::IsNullOrEmpty($WinSDK))) {
 	$CMAKE_SYSTEM_VERSION = "-DCMAKE_SYSTEM_VERSION='$WinSDK'"
 } else {
 	$CMAKE_SYSTEM_VERSION = ''
 }
 
-if(-Not (Test-Path $CMake)) {
-	throw "Unable to find CMake at $CMake"
-}
-
-if(-Not (Test-Path $Git)) {
-	throw "Unable to find Git at $Git"
-}
-
-if(-Not (Test-Path $SevenZ)) {
-	throw "Unable to find 7z at $SevenZ"
-}
-
-if(-Not (Test-Path $VSWhere)) {
-	throw "Unable to find VSWhere at $VSWhere"
-}
-
+Write-Host "WinSDK: $WinSDK"
+Write-Host "Config: $Config"
+Write-Host "Arch: $Arch"
+Write-Host "Type: $Type"
 Write-Host "Git: $Git"
 Write-Host "CMake: $CMake"
 Write-Host "7z: $SevenZ"
@@ -87,45 +92,37 @@ Write-Host "VSWhere: $VSWhere"
 
 & $VSWhere -property installationPath | New-Variable -Name 'VSPREFIX' -Option Constant
 
-New-Item -Type Directory ${BUILD}
-New-Item -Type Directory ${BUILD}\32
-New-Item -Type Directory ${BUILD}\32\dynamic
-New-Item -Type Directory ${BUILD}\32\static
-New-Item -Type Directory ${BUILD}\64
-New-Item -Type Directory ${BUILD}\64\dynamic
-New-Item -Type Directory ${BUILD}\64\static
-New-Item -Type Directory ${OUTPUT}
-New-Item -Type Directory ${OUTPUT}\pkg\Win64\Release\v142\dynamic
-New-Item -Type Directory ${OUTPUT}\pkg\Win32\Release\v142\dynamic
-New-Item -Type Directory ${OUTPUT}\pkg\Win64\Release\v142\static
-New-Item -Type Directory ${OUTPUT}\pkg\Win32\Release\v142\static
+# Create build directories.
+New-Item -Type Directory "${BUILD}" -Force
+New-Item -Type Directory "${BUILD}\${Arch}" -Force
+New-Item -Type Directory "${BUILD}\${Arch}\${Type}" -Force
+New-Item -Type Directory "${STAGE}\${BEARSSL}" -Force
+New-Item -Type Directory "${STAGE}\${LIBCBOR}" -Force
+New-Item -Type Directory "${STAGE}\${ZLIB}" -Force
 
+# Create output directories.
+New-Item -Type Directory "${OUTPUT}" -Force
+New-Item -Type Directory "${OUTPUT}\${Arch}" -Force
+New-Item -Type Directory "${OUTPUT}\${Arch}\${Type}" -force
+
+# Fetch and verify dependencies.
 Push-Location ${BUILD}
-
 try {
-	if (Test-Path .\${BEARSSL}) {
-		Remove-Item .\${BEARSSL} -Recurse -ErrorAction Stop
+	if (-Not (Test-Path .\${BEARSSL})) {
+		if (-Not (Test-Path .\${BEARSSL}.tar.gz -PathType leaf)) {
+			Invoke-WebRequest ${BEARSSL_URL}/${BEARSSL}.tar.gz `
+			    -OutFile .\${BEARSSL}.tar.gz
+		}
+
+		& $SevenZ e .\${BEARSSL}.tar.gz
+		& $SevenZ x .\${BEARSSL}.tar
+		Remove-Item -Force .\${BEARSSL}.tar
 	}
-
-	if(-Not (Test-Path .\${BEARSSL}.tar.gz -PathType leaf)) {
-		Invoke-WebRequest ${BEARSSL_URL}/${BEARSSL}.tar.gz `
-			-OutFile .\${BEARSSL}.tar.gz
+	if (-Not (Test-Path .\${LIBCBOR})) {
+		GitClone "${LIBCBOR_GIT}" "${LIBCBOR_BRANCH}" ".\${LIBCBOR}"
 	}
-
-	& $SevenZ e .\${BEARSSL}.tar.gz
-	& $SevenZ x .\${BEARSSL}.tar
-	Remove-Item -Force .\${BEARSSL}.tar
-
-	if(-Not (Test-Path .\${LIBCBOR})) {
-		Write-Host "Cloning ${LIBCBOR}..."
-		& $Git clone --branch ${LIBCBOR_BRANCH} ${LIBCBOR_GIT} `
-			.\${LIBCBOR}
-	}
-
-	if(-Not (Test-Path .\${ZLIB})) {
-		Write-Host "Cloning ${ZLIB}..."
-		& $Git clone --branch ${ZLIB_BRANCH} ${ZLIB_GIT} `
-			.\${ZLIB}
+	if (-Not (Test-Path .\${ZLIB})) {
+		GitClone "${ZLIB_GIT}" "${ZLIB_BRANCH}" ".\${ZLIB}"
 	}
 } catch {
 	throw "Failed to fetch and verify dependencies"
@@ -133,125 +130,95 @@ try {
 	Pop-Location
 }
 
-Function Build(${OUTPUT}, ${GENERATOR}, ${ARCH}, ${SHARED}, ${FLAGS}) {
-	New-Item -Type Directory ${OUTPUT}\include, ${OUTPUT}\lib
+# Build BearSSL.
+Push-Location ${STAGE}\${BEARSSL}
+try {
+	New-Item -Type Directory ${PREFIX}\include, ${PREFIX}\lib
 
-	if(-Not (Test-Path .\${BEARSSL})) {
-		New-Item -Type Directory .\${BEARSSL} -ErrorAction Stop
-	}
-
-	Push-Location ..\..\${BEARSSL}
+	Push-Location ..\..\..\${BEARSSL}
 	& cmd /c ("""${VSPREFIX}\VC\Auxiliary\Build\vcvarsall.bat"" $(${ARCH} -eq ""Win32"" ? ""x86"" : ${ARCH}) && " +
-		"nmake lib CFLAGS=""${FLAGS} -nologo -Zi -O2"" BUILD=$((Get-Location -Stack).Peek())\${BEARSSL}")
-	Copy-Item inc/*.h -Destination "${OUTPUT}\include"
+		"nmake lib CFLAGS=""${FLAGS} -nologo -Zi -O2"" BUILD=$((Get-Location -Stack).Peek())")
+	Copy-Item inc/*.h -Destination "${PREFIX}\include"
 	Pop-Location
 
-	Push-Location .\${BEARSSL}
-	Copy-Item "bearssls.lib" -Destination "${OUTPUT}\lib"
+	Copy-Item "bearssls.lib" -Destination "${PREFIX}\lib"
+} catch {
+	throw "Failed to build BearSSL"
+} finally {
 	Pop-Location
+}
 
-	if (-Not (Test-Path .\${LIBCBOR})) {
-		New-Item -Type Directory .\${LIBCBOR} -ErrorAction Stop
+# Build libcbor.
+Push-Location ${STAGE}\${LIBCBOR}
+try {
+	& $CMake ..\..\..\${LIBCBOR} -A "${Arch}" `
+	    -DWITH_EXAMPLES=OFF `
+	    -DBUILD_SHARED_LIBS="${SHARED}" `
+	    -DCMAKE_C_FLAGS_DEBUG="${CFLAGS_DEBUG}" `
+	    -DCMAKE_C_FLAGS_RELEASE="${CFLAGS_RELEASE}" `
+	    -DCMAKE_INSTALL_PREFIX="${PREFIX}" "${CMAKE_SYSTEM_VERSION}"; `
+	    ExitOnError
+	& $CMake --build . --config ${Config} --verbose; ExitOnError
+	& $CMake --build . --config ${Config} --target install --verbose; `
+	    ExitOnError
+} catch {
+	throw "Failed to build libcbor"
+} finally {
+	Pop-Location
+}
+
+# Build zlib.
+Push-Location ${STAGE}\${ZLIB}
+try {
+	& $CMake ..\..\..\${ZLIB} -A "${Arch}" `
+	    -DBUILD_SHARED_LIBS="${SHARED}" `
+	    -DCMAKE_C_FLAGS_DEBUG="${CFLAGS_DEBUG}" `
+	    -DCMAKE_C_FLAGS_RELEASE="${CFLAGS_RELEASE}" `
+	    -DCMAKE_INSTALL_PREFIX="${PREFIX}" "${CMAKE_SYSTEM_VERSION}"; `
+	    ExitOnError
+	& $CMake --build . --config ${Config} --verbose; ExitOnError
+	& $CMake --build . --config ${Config} --target install --verbose; `
+	    ExitOnError
+	# Patch up zlib's resulting names when built with --config Debug.
+	if ("${Config}" -eq "Debug") {
+		if ("${Type}" -eq "Dynamic") {
+			Copy-Item "${PREFIX}/lib/zlibd.lib" `
+			    -Destination "${PREFIX}/lib/zlib.lib" -Force
+			Copy-Item "${PREFIX}/bin/zlibd1.dll" `
+			    -Destination "${PREFIX}/bin/zlib1.dll" -Force
+		} else {
+			Copy-Item "${PREFIX}/lib/zlibstaticd.lib" `
+			    -Destination "${PREFIX}/lib/zlib.lib" -Force
+		}
 	}
-
-	Push-Location .\${LIBCBOR}
-	& $CMake ..\..\..\${LIBCBOR} -G "${GENERATOR}" -A "${ARCH}" `
-		-DBUILD_SHARED_LIBS="${SHARED}" `
-		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl" `
-		-DCMAKE_INSTALL_PREFIX="${OUTPUT}" "${CMAKE_SYSTEM_VERSION}"
-	& $CMake --build . --config Release --verbose
-	& $CMake --build . --config Release --target install --verbose
+} catch {
+	throw "Failed to build zlib"
+} finally {
 	Pop-Location
+}
 
-	if(-Not (Test-Path .\${ZLIB})) {
-		New-Item -Type Directory .\${ZLIB} -ErrorAction Stop
-	}
-
-	Push-Location .\${ZLIB}
-	& $CMake ..\..\..\${ZLIB} -G "${GENERATOR}" -A "${ARCH}" `
-		-DBUILD_SHARED_LIBS="${SHARED}" `
-		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl" `
-		-DCMAKE_INSTALL_PREFIX="${OUTPUT}" "${CMAKE_SYSTEM_VERSION}"
-	& $CMake --build . --config Release --verbose
-	& $CMake --build . --config Release --target install --verbose
+# Build libfido2.
+Push-Location ${STAGE}
+try {
+	# C4244 and C4267 are false-positive warnings from BearSSL
+	# headers. C4702 (unreachable code) is due to all cases
+	# commented out in tools/util.c for writing public keys (lack
+	# of support from BearSSL). C6001 (use of uninitialized memory)
+	# is false-positive for the hash variable in rs1_verify_sig()
+	# and rs256_verify_sig(). Disable for now.
+	& $CMake ..\..\.. -A "${Arch}" `
+	    -DCMAKE_BUILD_TYPE="${Config}" `
+	    -DBUILD_SHARED_LIBS="${SHARED}" `
+	    -DCMAKE_PREFIX_PATH="${PREFIX}" `
+	    -DCMAKE_C_FLAGS_DEBUG="${CFLAGS_DEBUG} ${Fido2Flags} /wd4244 /wd4267 /wd4702 /wd6001" `
+	    -DCMAKE_C_FLAGS_RELEASE="${CFLAGS_RELEASE} ${Fido2Flags} /wd4244 /wd4267 /wd4702 /wd6001" `
+	    -DCMAKE_INSTALL_PREFIX="${PREFIX}" "${CMAKE_SYSTEM_VERSION}"; `
+	    ExitOnError
+	& $CMake --build . --config ${Config} --verbose; ExitOnError
+	& $CMake --build . --config ${Config} --target install --verbose; `
+	    ExitOnError
+} catch {
+	throw "Failed to build libfido2"
+} finally {
 	Pop-Location
-
-        # C6001 (use of uninitialized memory) gives false-positive
-        # for hash variable in assert.c:fido_verify_sig_rs256.
-	# Disable for now.
-	& $CMake ..\..\.. -G "${GENERATOR}" -A "${ARCH}" `
-		-DBUILD_SHARED_LIBS="${SHARED}" `
-		-DCMAKE_PREFIX_PATH="${OUTPUT}" `
-		-DCMAKE_C_FLAGS_RELEASE="${FLAGS} /Zi /guard:cf /sdl /wd4244 /wd4267 /wd4702 /wd6001 ${Fido2Flags}" `
-		-DCMAKE_INSTALL_PREFIX="${OUTPUT}" "${CMAKE_SYSTEM_VERSION}"
-	& $CMake --build . --config Release --verbose
-	& $CMake --build . --config Release --target install --verbose
 }
-
-Function Package-Headers() {
-	Copy-Item "${OUTPUT}\64\dynamic\include" -Destination "${OUTPUT}\pkg" `
-		-Recurse -ErrorAction Stop
-}
-
-Function Package-Dynamic(${SRC}, ${DEST}) {
-	Copy-Item "${SRC}\bin\cbor.dll" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}\lib\cbor.lib" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}\bin\zlib1.dll" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}\lib\zlib.lib" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}\lib\bearssls.lib" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}\bin\fido2.dll" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}\lib\fido2.lib" "${DEST}" -ErrorAction Stop
-}
-
-Function Package-Static(${SRC}, ${DEST}) {
-	Copy-Item "${SRC}/lib/cbor.lib" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}/lib/zlib.lib" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}/lib/bearssls.lib" "${DEST}" -ErrorAction Stop
-	Copy-Item "${SRC}/lib/fido2_static.lib" "${DEST}/fido2.lib" `
-		-ErrorAction Stop
-}
-
-Function Package-PDBs(${SRC}, ${DEST}) {
-	Copy-Item "${SRC}\${LIBCBOR}\src\cbor.dir\Release\vc142.pdb" `
-		"${DEST}\cbor.pdb" -ErrorAction Stop
-	Copy-Item "${SRC}\${ZLIB}\zlib.dir\Release\vc142.pdb" `
-		"${DEST}\zlib.pdb" -ErrorAction Stop
-	Copy-Item "${SRC}\src\fido2_shared.dir\Release\vc142.pdb" `
-		"${DEST}\fido2.pdb" -ErrorAction Stop
-}
-
-Function Package-Tools(${SRC}, ${DEST}) {
-	#Copy-Item "${SRC}\tools\Release\fido2-assert.exe" `
-	#	"${DEST}\fido2-assert.exe" -ErrorAction stop
-	Copy-Item "${SRC}\tools\Release\fido2-cred.exe" `
-		"${DEST}\fido2-cred.exe" -ErrorAction stop
-	Copy-Item "${SRC}\tools\Release\fido2-token.exe" `
-		"${DEST}\fido2-token.exe" -ErrorAction stop
-}
-
-Push-Location ${BUILD}\64\dynamic
-Build ${OUTPUT}\64\dynamic "Visual Studio 16 2019" "x64" "ON" "/MD"
-Pop-Location
-Push-Location ${BUILD}\32\dynamic
-Build ${OUTPUT}\32\dynamic "Visual Studio 16 2019" "Win32" "ON" "/MD"
-Pop-Location
-
-Push-Location ${BUILD}\64\static
-Build ${OUTPUT}\64\static "Visual Studio 16 2019" "x64" "OFF" "/MT"
-Pop-Location
-Push-Location ${BUILD}\32\static
-Build ${OUTPUT}\32\static "Visual Studio 16 2019" "Win32" "OFF" "/MT"
-Pop-Location
-
-Package-Headers
-
-Package-Dynamic ${OUTPUT}\64\dynamic ${OUTPUT}\pkg\Win64\Release\v142\dynamic
-Package-PDBs ${BUILD}\64\dynamic ${OUTPUT}\pkg\Win64\Release\v142\dynamic
-Package-Tools ${BUILD}\64\dynamic ${OUTPUT}\pkg\Win64\Release\v142\dynamic
-
-Package-Dynamic ${OUTPUT}\32\dynamic ${OUTPUT}\pkg\Win32\Release\v142\dynamic
-Package-PDBs ${BUILD}\32\dynamic ${OUTPUT}\pkg\Win32\Release\v142\dynamic
-Package-Tools ${BUILD}\32\dynamic ${OUTPUT}\pkg\Win32\Release\v142\dynamic
-
-Package-Static ${OUTPUT}\64\static ${OUTPUT}\pkg\Win64\Release\v142\static
-Package-Static ${OUTPUT}\32\static ${OUTPUT}\pkg\Win32\Release\v142\static

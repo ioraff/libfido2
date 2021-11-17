@@ -98,8 +98,12 @@ typedef struct fido_attcred {
 } fido_attcred_t;
 
 typedef struct fido_attstmt {
-	fido_blob_t x5c; /* attestation certificate */
-	fido_blob_t sig; /* attestation signature */
+	fido_blob_t certinfo; /* tpm attestation TPMS_ATTEST structure */
+	fido_blob_t pubarea;  /* tpm attestation TPMT_PUBLIC structure */
+	fido_blob_t cbor;     /* cbor-encoded attestation statement */
+	fido_blob_t x5c;      /* attestation certificate */
+	fido_blob_t sig;      /* attestation signature */
+	int         alg;      /* attestation algorithm (cose) */
 } fido_attstmt_t;
 
 typedef struct fido_rp {
@@ -115,8 +119,9 @@ typedef struct fido_user {
 } fido_user_t;
 
 typedef struct fido_cred_ext {
-	int mask; /* enabled extensions */
-	int prot; /* protection policy */
+	int    mask;      /* enabled extensions */
+	int    prot;      /* protection policy */
+	size_t minpinlen; /* minimum pin length */
 } fido_cred_ext_t;
 
 typedef struct fido_cred {
@@ -250,6 +255,7 @@ typedef struct fido_dev {
 	int                   flags;      /* internal flags; see FIDO_DEV_* */
 	fido_dev_transport_t  transport;  /* transport functions */
 	uint64_t	      maxmsgsize; /* max message size */
+	int		      timeout_ms; /* read timeout in ms */
 } fido_dev_t;
 
 #else

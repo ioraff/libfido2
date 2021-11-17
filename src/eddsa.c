@@ -80,3 +80,15 @@ eddsa_pk_from_ptr(eddsa_pk_t *pk, const void *ptr, size_t len)
 
 	return (FIDO_OK);
 }
+
+int
+eddsa_pk_verify_sig(const fido_blob_t *dgst, const eddsa_pk_t *pk,
+    const fido_blob_t *sig)
+{
+	(void)dgst;
+	(void)pk;
+	(void)sig;
+
+	fido_log_debug("%s: EdDSA not implemented", __func__);
+	return (-1);
+}

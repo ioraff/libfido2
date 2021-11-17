@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Yubico AB. All rights reserved.
+ * Copyright (c) 2018-2021 Yubico AB. All rights reserved.
  * Use of this source code is governed by a BSD-style
  * license that can be found in the LICENSE file.
  */
@@ -83,4 +83,58 @@ rs256_pk_from_ptr(rs256_pk_t *pk, const void *ptr, size_t len)
 	memcpy(pk, ptr, sizeof(*pk));
 
 	return (FIDO_OK);
+}
+
+int
+rs256_verify_sig(const fido_blob_t *dgst, const br_rsa_public_key *pkey,
+    const fido_blob_t *sig)
+{
+	unsigned char	hash[br_sha256_SIZE];
+	int		ok = -1;
+
+	/* RS256 verify needs SHA256-sized hash */
+	if (dgst->len != br_sha256_SIZE) {
+		fido_log_debug("%s: dgst->len=%zu", __func__, dgst->len);
+		return (-1);
+	}
+
+	if (br_rsa_pkcs1_vrfy_get_default()(sig->ptr, sig->len,
+	    BR_HASH_OID_SHA256, dgst->len, pkey, hash) != 1 ||
+	    memcmp(dgst->ptr, hash, sizeof(hash)) != 0) {
+		fido_log_debug("%s: RSA verify", __func__);
+		goto fail;
+	}
+
+	ok = 0;
+fail:
+	return (ok);
+}
+
+int
+rs256_pk_verify_sig(const fido_blob_t *dgst, const rs256_pk_t *pk,
+    const fido_blob_t *sig)
+{
+	br_rsa_public_key	pkey;
+	int		 	ok = -1;
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#endif
+	pkey.n = (unsigned char *)pk->n;
+	pkey.nlen = sizeof(pk->n);
+	pkey.e = (unsigned char *)pk->e;
+	pkey.elen = sizeof(pk->e);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
+	if (rs256_verify_sig(dgst, &pkey, sig) < 0) {
+		fido_log_debug("%s: rs256_verify_sig", __func__);
+		goto fail;
+	}
+
+	ok = 0;
+fail:
+	return (ok);
 }

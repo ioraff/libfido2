@@ -136,7 +136,7 @@ try {
 	New-Item -Type Directory ${PREFIX}\include, ${PREFIX}\lib
 
 	Push-Location ..\..\..\${BEARSSL}
-	& cmd /c ("""${VSPREFIX}\VC\Auxiliary\Build\vcvarsall.bat"" $(${ARCH} -eq ""Win32"" ? ""x86"" : ${ARCH}) && " +
+	& cmd /c ("""${VSPREFIX}\VC\Auxiliary\Build\vcvarsall.bat"" $(${VCARCH}.${Arch}) && " +
 		"nmake lib CFLAGS=""${FLAGS} -nologo -Zi -O2"" BUILD=$((Get-Location -Stack).Peek())")
 	Copy-Item inc/*.h -Destination "${PREFIX}\include"
 	Pop-Location

@@ -39,3 +39,5 @@ New-Variable -Name 'CFLAGS_DEBUG' -Value "${RUNTIME}d /Zi /guard:cf /sdl" `
     -Option Constant
 New-Variable -Name 'CFLAGS_RELEASE' -Value "${RUNTIME} /Zi /guard:cf /sdl" `
     -Option Constant
+New-Variable -Name 'VCARCH' -Value @{x64="x64"; Win32="x86"; ARM64="x64_arm64"; ARM="x64_arm"} `
+    -Option Constant

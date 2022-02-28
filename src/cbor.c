@@ -1684,3 +1684,4 @@ cbor_array_drop(cbor_item_t **array, size_t idx)
 
 	return 0;
 }
+

@@ -20,6 +20,10 @@
 #define TPM_ALG_RSA	0x0001
 #define TPM_ALG_SHA256	0x000b
 #define TPM_ALG_NULL	0x0010
+#define TPM_ALG_ECC	0x0023
+
+/* Part 2, 6.4: TPM_ECC_CURVE */
+#define TPM_ECC_P256	0x0003
 
 /* Part 2, 6.9: TPM_ST_ATTEST_CERTIFY */
 #define TPM_ST_CERTIFY	0x8017
@@ -30,7 +34,7 @@
 #define TPMA_CLEAR	0x00000004	/* object persists */
 #define TPMA_FIXED_P	0x00000010	/* object has fixed parent */
 #define TPMA_SENSITIVE	0x00000020	/* data originates within tpm */
-#define TPMA_SIGN	0x00020000	/* object may sign */
+#define TPMA_SIGN	0x00040000	/* object may sign */
 
 static void
 putbe16(unsigned char *buf, uint16_t val)
@@ -60,7 +64,7 @@ getbe32(const unsigned char *buf)
 }
 
 static int
-check_rsa2048_pubarea(const fido_blob_t *buf, const rs256_pk_t *pk)
+check_rs256_pubarea(const fido_blob_t *buf, const rs256_pk_t *pk)
 {
 	const unsigned char	*actual;
 	unsigned char		 expected[310];
@@ -94,6 +98,46 @@ check_rsa2048_pubarea(const fido_blob_t *buf, const rs256_pk_t *pk)
 	/* Part 2, 11.2.4.5: TPM2B_PUBLIC_KEY_RSA */
 	putbe16(&expected[52], 256);
 	memcpy(&expected[54], &pk->n, 256);
+
+	ok = timingsafe_bcmp(&expected, actual, sizeof(expected));
+	explicit_bzero(&expected, sizeof(expected));
+
+	return ok != 0 ? -1 : 0;
+}
+
+static int
+check_es256_pubarea(const fido_blob_t *buf, const es256_pk_t *pk)
+{
+	const unsigned char	*actual;
+	unsigned char		 expected[566];
+	uint32_t		 attr;
+	int			 ok;
+
+	if (buf->len != sizeof(*actual)) {
+		fido_log_debug("%s: buf->len=%zu", __func__, buf->len);
+		return -1;
+	}
+	actual = buf->ptr;
+
+	putbe16(&expected[0], TPM_ALG_ECC);
+	putbe16(&expected[2], TPM_ALG_SHA256);
+	attr = getbe32(&actual[4]);
+	attr &= ~(TPMA_RESERVED|TPMA_CLEAR);
+	attr |= (TPMA_FIXED|TPMA_FIXED_P|TPMA_SENSITIVE|TPMA_SIGN);
+	putbe32(&expected[4], attr);
+
+	putbe16(&expected[8], 32);
+	memcpy(&expected[10], &actual[10], 32);
+
+	putbe16(&expected[42], TPM_ALG_NULL);
+	putbe16(&expected[44], TPM_ALG_NULL);
+	putbe16(&expected[46], TPM_ECC_P256);
+	putbe16(&expected[48], TPM_ALG_NULL);
+
+	putbe16(&expected[50], 256);
+	putbe16(&expected[52], 256);
+	memcpy(&expected[54], &pk->x, 256);
+	memcpy(&expected[310], &pk->y, 256);
 
 	ok = timingsafe_bcmp(&expected, actual, sizeof(expected));
 	explicit_bzero(&expected, sizeof(expected));
@@ -166,14 +210,28 @@ fido_get_signed_hash_tpm(fido_blob_t *dgst, const fido_blob_t *clientdata_hash,
 	const fido_blob_t *pubarea = &attstmt->pubarea;
 	const fido_blob_t *certinfo = &attstmt->certinfo;
 
-	if (attstmt->alg != COSE_RS1 || attcred->type != COSE_RS256) {
-		fido_log_debug("%s: unsupported alg %d, type %d", __func__,
-		    attstmt->alg, attcred->type);
+	if (attstmt->alg != COSE_RS1) {
+		fido_log_debug("%s: unsupported alg %d", __func__,
+		    attstmt->alg);
 		return -1;
 	}
 
-	if (check_rsa2048_pubarea(pubarea, &attcred->pubkey.rs256) < 0) {
-		fido_log_debug("%s: check_rsa2048_pubarea", __func__);
+	switch (attcred->type) {
+	case COSE_ES256:
+		if (check_es256_pubarea(pubarea, &attcred->pubkey.es256) < 0) {
+			fido_log_debug("%s: check_es256_pubarea", __func__);
+			return -1;
+		}
+		break;
+	case COSE_RS256:
+		if (check_rs256_pubarea(pubarea, &attcred->pubkey.rs256) < 0) {
+			fido_log_debug("%s: check_rs256_pubarea", __func__);
+			return -1;
+		}
+		break;
+	default:
+		fido_log_debug("%s: unsupported type %d", __func__,
+		    attcred->type);
 		return -1;
 	}
 
@@ -196,3 +254,4 @@ fido_get_signed_hash_tpm(fido_blob_t *dgst, const fido_blob_t *clientdata_hash,
 
 	return 0;
 }
+

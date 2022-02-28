@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Yubico AB. All rights reserved.
+ * Copyright (c) 2019-2021 Yubico AB. All rights reserved.
  * Use of this source code is governed by a BSD-style
  * license that can be found in the LICENSE file.
  */
@@ -92,3 +92,4 @@ eddsa_pk_verify_sig(const fido_blob_t *dgst, const eddsa_pk_t *pk,
 	fido_log_debug("%s: EdDSA not implemented", __func__);
 	return (-1);
 }
+
